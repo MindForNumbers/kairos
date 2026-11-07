@@ -4,8 +4,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 
-/** Every model call in Kairos goes through this module. One model, pinned. */
+/** Every model call in Kairos goes through this module. */
 export const MODEL = "claude-haiku-5-5";
+/** The drafter runs on MODEL. */
+export const DRAFTER_MODEL = MODEL;
+/** The critic runs on a different model so the drafter's blind spots aren't shared. */
+export function criticModel(): string {
+  return process.env.KAIROS_CRITIC_MODEL?.trim() || "claude-sonnet-5-5";
+}
 
 let client: Anthropic | undefined;
 function getClient() {
@@ -25,6 +31,8 @@ export type StructuredCall<S extends z.ZodType> = {
   /** The single user turn. Every call is one-shot: fresh context, no history. */
   user: string;
   schema: S;
+  /** Defaults to MODEL (the drafter's model). */
+  model?: string;
   effort?: Effort;
   maxTokens?: number;
 };
@@ -56,7 +64,7 @@ export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S
   // zodOutputFormat still constrains the output; we validate the JSON ourselves below.
   const { data: response, request_id } = await getClient()
     .messages.create({
-      model: MODEL,
+      model: call.model ?? MODEL,
       max_tokens: call.maxTokens ?? 16_000,
       system: call.system,
       messages: [{ role: "user", content: call.user }],

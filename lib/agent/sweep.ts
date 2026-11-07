@@ -2,6 +2,7 @@ import "server-only";
 import { daysBetween, localDate, now, nowMs, timezone } from "@/lib/clock";
 import { getStore, type ProposalStatus } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "./paypal-read";
+import { GRACE_DAYS } from "./policy";
 import { cleanUntrusted, flagUntrusted } from "./untrusted";
 
 /**
@@ -51,7 +52,7 @@ export type SweepResult = {
   /** Overdue and eligible, but beyond this run's set. Next run. */
   deferred: InvoiceRecord[];
   /** Overdue but held back by code, with the reason. */
-  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "cooldown" | "in_queue"; detail: string }[];
+  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "in_queue"; detail: string }[];
   openNotDue: { invoiceId: string; invoiceNumber: string | null; dueDate: string; amountDue: string | null }[];
   counts: { listed: number; open: number; overdue: number };
   truncated: boolean;
@@ -131,6 +132,11 @@ export async function sweep(): Promise<SweepResult> {
   for (const summary of overdueSummaries) {
     const last = await store.lastSendFor(summary.id);
     const days = daysBetween(dueDateOf(summary)!, today);
+    if (days < GRACE_DAYS) {
+      excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days, reason: "grace_period",
+        detail: `under the ${GRACE_DAYS}-day grace period` });
+      continue;
+    }
     if (last && Date.parse(last.sentAt) > cooldownStart) {
       excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days, reason: "cooldown",
         detail: `last reminder ${last.sentAt} (${last.source})` });
@@ -146,7 +152,7 @@ export async function sweep(): Promise<SweepResult> {
     const full = await fetchInvoice(summary.id);
     if (!CHASEABLE.has(full.status) || !dueDateOf(full)) continue;
     const record = toRecord(full, today, last?.sentAt ?? null);
-    if (record.daysOverdue > 0) eligible.push(record);
+    if (record.daysOverdue >= GRACE_DAYS) eligible.push(record);
   }
 
   eligible.sort(compareUrgency);
