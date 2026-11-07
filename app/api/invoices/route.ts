@@ -30,6 +30,7 @@ async function findReplay(input: CreateInvoiceInput): Promise<Invoice | undefine
   const created = Date.parse(existing.detail.metadata?.create_time ?? "");
   const sameRecipient =
     existing.primary_recipients?.[0]?.billing_info?.email_address?.toLowerCase() === input.recipient.email.toLowerCase();
+  // real-clock: compared against PayPal's own (real) create_time
   return sameRecipient && Date.now() - created < REPLAY_WINDOW_MS ? existing : undefined;
 }
 

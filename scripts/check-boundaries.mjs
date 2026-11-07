@@ -25,13 +25,40 @@ const rules = [
     applies: (f) => !f.startsWith("lib/db/"),
     forbid: /from\s+["'](@\/lib\/db|(\.\.\/)+lib\/db)\/(sqlite|types|draft-hash)["']/,
   },
+  {
+    name: "lib/agent/ reaches PayPal only through lib/agent/paypal-read.ts",
+    applies: (f) => f.startsWith("lib/agent/") && f !== "lib/agent/paypal-read.ts",
+    forbid: /from\s+["'](@\/lib\/paypal|(\.\.\/)+paypal)(\/[^"']*)?["']/,
+  },
+  {
+    name: "paypal-read.ts imports only read operations",
+    applies: (f) => f === "lib/agent/paypal-read.ts",
+    check: (src) => {
+      const imports = [...src.matchAll(/import\s+(type\s+)?\{([^}]*)\}\s+from\s+["']([^"']+)["']/g)];
+      const allowed = new Set(["getInvoice", "listInvoices", "Invoice"]);
+      return imports.every(([, , names, from]) =>
+        !from.includes("paypal") ||
+        (from === "@/lib/paypal/invoices" && names.split(",").map((n) => n.trim()).filter(Boolean).every((n) => allowed.has(n))));
+    },
+  },
+  {
+    name: "lib/agent/ makes no HTTP calls and never touches /api routes or the executor",
+    applies: (f) => f.startsWith("lib/agent/"),
+    forbid: /\bfetch\(|["'`]\/api\/|lib\/executor|from\s+["']node:(http|https|net)["']/,
+  },
+  {
+    name: "Business time comes from lib/clock.ts (mark genuine real-time reads with a real-clock comment)",
+    applies: (f) => /^(lib|app\/api|scripts)\//.test(f) && f !== "lib/clock.ts" && f !== "scripts/check-boundaries.mjs",
+    check: (src) => src.split("\n").every((line, i, lines) =>
+      !/new Date\(\)|Date\.now\(\)/.test(line) || /real-clock/.test(line) || /real-clock/.test(lines[i - 1] ?? "")),
+  },
 ];
 
 let failed = 0;
 for (const f of files) {
   const src = readFileSync(f, "utf8");
   for (const r of rules) {
-    if (r.applies(f) && r.forbid.test(src)) {
+    if (r.applies(f) && (r.forbid ? r.forbid.test(src) : !r.check(src))) {
       console.error(`✗ ${f}: ${r.name}`);
       failed++;
     }

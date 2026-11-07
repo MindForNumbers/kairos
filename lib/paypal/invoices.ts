@@ -37,7 +37,7 @@ const moneyValue = z.string().regex(/^\d+(\.\d{1,2})?$/, "Use a positive amount 
 
 export const createInvoiceSchema = z.object({
   currency: z.string().length(3).toUpperCase().default("USD"),
-  invoiceNumber: z.string().max(127).optional(),
+  invoiceNumber: z.string().max(25).optional(),
   recipient: z.object({
     email: z.email(),
     givenName: z.string().max(140).optional(),

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
+import { now as clockNow, nowIso } from "../clock";
 import { hashDraft } from "./draft-hash";
 import type {
   Approval, AuditEvent, ClaimResult, LedgerEntry, Proposal, ProposalStatus, Run, Store,
@@ -112,7 +113,7 @@ const MIGRATIONS: string[] = [
   `,
 ];
 
-const now = () => new Date().toISOString();
+const now = nowIso;
 const id = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "")}`;
 const json = (v: unknown) => (v === undefined ? null : JSON.stringify(v));
 const unjson = (s: string | null) => (s == null ? null : JSON.parse(s));
@@ -243,7 +244,7 @@ export function openSqliteStore(path: string): Store {
     },
 
     async createApproval(input) {
-      const ts = new Date();
+      const ts = clockNow();
       const aid = id("apr");
       db.prepare(`INSERT INTO approvals (id, proposal_id, token_hash, draft_hash, approved_by, created_at, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
@@ -253,7 +254,7 @@ export function openSqliteStore(path: string): Store {
       return toApproval(db.prepare("SELECT * FROM approvals WHERE id = ?").get(aid) as Row);
     },
 
-    async claimApproval(tokenHash, at = new Date()) {
+    async claimApproval(tokenHash, at = clockNow()) {
       return db.transaction((): ClaimResult => {
         const r = db.prepare("SELECT * FROM approvals WHERE token_hash = ?").get(tokenHash) as Row | undefined;
         if (!r) return { ok: false, reason: "not_found" };

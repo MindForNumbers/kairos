@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "llm:smoke": "node --env-file=.env --conditions=react-server --import tsx scripts/llm-smoke.ts",
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "seed": "node --env-file=.env --conditions=react-server --import tsx scripts/seed.ts",
+    "agent:sweep": "node --env-file=.env --conditions=react-server --import tsx scripts/agent-sweep.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

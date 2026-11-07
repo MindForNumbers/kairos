@@ -51,7 +51,7 @@ export type StructuredResult<T> =
  * API and network errors still throw as Anthropic.APIError subclasses.
  */
 export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S>): Promise<StructuredResult<z.infer<S>>> {
-  const started = Date.now();
+  const started = Date.now(); // real-clock: measures latency
   // create().withResponse() rather than parse(): parse() drops the request id, which the audit log needs.
   // zodOutputFormat still constrains the output; we validate the JSON ourselves below.
   const { data: response, request_id } = await getClient()
@@ -72,7 +72,7 @@ export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S
     inputTokens: response.usage.input_tokens,
     outputTokens: response.usage.output_tokens,
     promptHash: createHash("sha256").update(call.system).update("\0").update(call.user).digest("hex"),
-    durationMs: Date.now() - started,
+    durationMs: Date.now() - started, // real-clock
   };
 
   // Haiku 5.5 has no server-side refusal fallback, so a refusal is a terminal result here.

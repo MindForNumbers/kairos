@@ -39,6 +39,7 @@ let cached: { token: string; expiresAt: number } | null = null;
 let inflight: Promise<string> | null = null;
 
 async function getAccessToken(): Promise<string> {
+  // real-clock: OAuth token expiry is real time, not business time.
   if (cached && Date.now() < cached.expiresAt) return cached.token;
   if (inflight) return inflight;
 
@@ -58,7 +59,7 @@ async function getAccessToken(): Promise<string> {
       throw new PayPalError(res.status, body.error ?? "AUTH_FAILED", body.error_description ?? "PayPal auth failed", res.headers.get("paypal-debug-id") ?? undefined);
     }
     const data = (await res.json()) as { access_token: string; expires_in: number };
-    cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
+    cached = { token: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 }; // real-clock
     return data.access_token;
   })();
 
