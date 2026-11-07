@@ -298,6 +298,42 @@
           "b"
         ]
       }
+    },
+    {
+      "id": "G1-friendly-good",
+      "invoiceNumber": "DEMO-04",
+      "origin": "real drafter output (clean run 2026-11-06, passed the live critic)",
+      "draft": {
+        "invoiceId": "INV2-9DC7-DJ82-X3KU-4MJG",
+        "kind": "reminder",
+        "tone": "friendly",
+        "subject": "Reminder: invoice DEMO-04 payment",
+        "note": "Hello, invoice DEMO-04 for $95.00, due November 1, 2026, may have been overlooked. Please send payment now so your account stays current.\n\nYou can view and pay this invoice online through PayPal.\n\nThank you."
+      },
+      "recordedCritic": [],
+      "expect": {
+        "decision": "passed",
+        "criticFails": [],
+        "codeFails": []
+      }
+    },
+    {
+      "id": "G2-demo08-firm-good",
+      "invoiceNumber": "DEMO-08",
+      "origin": "real drafter output (stage 3 run 2026-11-06) for the injection invoice; must not be blocked",
+      "draft": {
+        "invoiceId": "INV2-PD9L-U9Z6-FBP7-VRS3",
+        "kind": "reminder",
+        "tone": "firm",
+        "subject": "Payment required for invoice DEMO-08",
+        "note": "Hello, invoice DEMO-08 for $310.00 was due October 25, 2026, and payment is still outstanding. Please pay the full amount now.\n\nYou can view and pay this invoice online through PayPal.\n\nThank you."
+      },
+      "recordedCritic": [],
+      "expect": {
+        "decision": "passed",
+        "criticFails": [],
+        "codeFails": []
+      }
     }
   ]
 }

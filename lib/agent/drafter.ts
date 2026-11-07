@@ -70,6 +70,7 @@ action "remind": write a subject (under ${SUBJECT_MAX_CHARS} characters) and a b
 - Mention only this one invoice. Never mention other invoices, customers or amounts.
 - Never offer or hint at a discount, waiver, write-off, refund, credit, extension, payment plan or new due date.
 - Never say or imply the invoice is paid, cancelled, disputed or changed, and never claim any action was taken.
+- Never mention closing, settling, clearing or resolving the account or balance (e.g. "to settle this balance", "close your account balance"). Just ask for payment of the invoice.
 - Make no promises and no threats: no late fees, collections, legal action or service suspension.
 - No sign-off and no thanks of any kind ("Thank you", "We appreciate your business", "thank you for your attention"): the system adds the only "Thank you."
 - Never suggest the business made a mistake or overlooked anything.

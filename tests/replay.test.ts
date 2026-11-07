@@ -18,7 +18,7 @@ const checksOf = (issues: Issue[]) => [...new Set(issues.map((i) => i.check))].s
 after(reset);
 
 for (const c of fx.cases) {
-  test(`replay ${c.id} (${c.origin}): caught the same way`, () => {
+  test(`replay ${c.id} (${c.origin}): ${c.expect.decision === "passed" ? "must pass (false-positive guard)" : "caught the same way"}`, () => {
     const rec = recordOf(fx.sweep, c.invoiceNumber);
     if (!c.draft) {
       // (e) omission: everything else is covered, this invoice isn't.

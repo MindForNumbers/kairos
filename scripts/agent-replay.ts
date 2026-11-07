@@ -1,7 +1,9 @@
 // Live replay: send the frozen replay cases (tests/fixtures/replay.json) to the REAL critic,
-// one fresh call per case, and assert each is still caught the same way.
-//   npm run agent:replay            (writes to data/replay.db unless KAIROS_DB_PATH is set)
-// npm test covers the same cases deterministically with stubbed models.
+// one fresh call per case. Bad cases must be caught the same way; known-good cases must pass
+// (guards against the critic drifting stricter).
+//   npm run agent:replay
+// Uses the normal DB (KAIROS_DB_PATH): only audit and model_calls rows are written, so the
+// spend counts toward KAIROS_DAILY_COST_CAP. npm test covers the same cases with stubbed models.
 import { readFileSync } from "node:fs";
 import { createBudget } from "../lib/agent/budget";
 import { checkCoverage, checkDraft, decide, type Issue, type KnownInvoice } from "../lib/agent/checks";
@@ -14,7 +16,6 @@ import type { Draft } from "../lib/agent/drafter";
 type Case = { id: string; invoiceNumber: string; origin: string; draft: Draft | null; expect: { decision: string; criticFails: string[]; codeFails: string[] } };
 
 async function main() {
-  process.env.KAIROS_DB_PATH ??= "data/replay.db";
   const fx = JSON.parse(readFileSync("tests/fixtures/replay.json", "utf8")) as { sweep: SweepResult; cases: Case[] };
   setClockForTesting(fx.sweep.asOf); // overdue math as of the original run
   const s = fx.sweep;
@@ -50,7 +51,7 @@ async function main() {
     console.log(`${criticOk && decisionOk ? "✓" : "✗"} ${c.id.padEnd(24)} expect critic ⊇ [${c.expect.criticFails}] → live [${liveFails}]   code [${checks(code)}]   decision ${decision}${decisionOk ? "" : ` (expected ${c.expect.decision})`}   $${res.meta.costUsd.toFixed(4)}`);
     if (!criticOk && res.verdicts.get(rec.invoiceId)) console.log(`    critic said: ${JSON.stringify(res.verdicts.get(rec.invoiceId))}`);
   }
-  console.log(`\n${fx.cases.length - failures}/${fx.cases.length} caught the same way · critic ${process.env.KAIROS_CRITIC_MODEL || "claude-sonnet-5-5"} · total $${budget.spentUsd().toFixed(4)}`);
+  console.log(`\n${fx.cases.length - failures}/${fx.cases.length} matched (bad cases caught, good cases passed) · critic ${process.env.KAIROS_CRITIC_MODEL || "claude-sonnet-5-5"} · total $${budget.spentUsd().toFixed(4)}`);
   if (failures) process.exit(1);
 }
 main().catch((e) => { console.error(e); process.exit(1); });
