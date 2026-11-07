@@ -1,0 +1,40 @@
+:root {
+  --bg: #f7f7f5; --surface: #fff; --text: #1a1a1a; --muted: #6b6b6b;
+  --border: #e3e3df; --accent: #1f4fd1; --danger: #b42318; --ok: #067647; --warn: #b54708;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141414; --surface: #1d1d1d; --text: #ececec; --muted: #9a9a9a; --border: #2e2e2e; --accent: #7aa2ff; --danger: #ff8a7a; --ok: #6fd3a0; --warn: #f5b66b; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+a { color: var(--accent); }
+h1 { font-size: 1.5rem; margin: 0 0 16px; }
+h2 { font-size: 1.1rem; margin: 24px 0 8px; }
+.topbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.brand { font-weight: 700; color: var(--text); text-decoration: none; margin-right: auto; }
+.badge { font-size: .75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--warn); color: var(--warn); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); font-size: .9rem; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.status { font-size: .75rem; font-weight: 600; letter-spacing: .02em; }
+.status-PAID, .status-MARKED_AS_PAID { color: var(--ok); }
+.status-CANCELLED, .status-REFUNDED, .status-MARKED_AS_REFUNDED { color: var(--muted); }
+.status-SENT, .status-UNPAID, .status-PARTIALLY_PAID, .status-PAYMENT_PENDING { color: var(--warn); }
+.button { display: inline-block; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; font-size: .9rem; cursor: pointer; text-decoration: none; }
+.button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.button.danger { color: var(--danger); }
+.button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > * { flex: 1 1 160px; }
+label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.field { margin-bottom: 12px; }
+.error { color: var(--danger); font-size: .9rem; white-space: pre-wrap; }
+.muted { color: var(--muted); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .9rem; }
+.check input { width: auto; }

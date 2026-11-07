@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "paypal@claude-plugins-official": true
+  }
+}
