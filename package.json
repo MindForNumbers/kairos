@@ -11,7 +11,8 @@
     "test": "node --conditions=react-server --import tsx --test tests/*.test.ts",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "seed": "node --env-file=.env --conditions=react-server --import tsx scripts/seed.ts",
-    "agent:sweep": "node --env-file=.env --conditions=react-server --import tsx scripts/agent-sweep.ts"
+    "agent:sweep": "node --env-file=.env --conditions=react-server --import tsx scripts/agent-sweep.ts",
+    "sandbox:cleanup": "node --env-file=.env --conditions=react-server --import tsx scripts/sandbox-cleanup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
