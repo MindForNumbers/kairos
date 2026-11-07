@@ -18,6 +18,8 @@ export const REMINDER_COOLDOWN_DAYS = 7;
 const CHASEABLE = new Set(["SENT", "UNPAID", "PARTIALLY_PAID"]);
 /** Proposal states that mean "already being handled". Don't draft again. */
 const ACTIVE_PROPOSAL: ProposalStatus[] = ["pending_review", "passed", "approved"];
+/** Waiting on a human in "Needs a human". Don't re-draft until someone resolves it. */
+const NEEDS_HUMAN: ProposalStatus[] = ["blocked", "escalated"];
 
 export type InvoiceRecord = {
   invoiceId: string;
@@ -52,7 +54,7 @@ export type SweepResult = {
   /** Overdue and eligible, but beyond this run's set. Next run. */
   deferred: InvoiceRecord[];
   /** Overdue but held back by code, with the reason. */
-  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "in_queue"; detail: string }[];
+  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "in_queue" | "needs_human"; detail: string }[];
   openNotDue: { invoiceId: string; invoiceNumber: string | null; dueDate: string; amountDue: string | null }[];
   counts: { listed: number; open: number; overdue: number };
   truncated: boolean;
@@ -142,10 +144,11 @@ export async function sweep(): Promise<SweepResult> {
         detail: `last reminder ${last.sentAt} (${last.source})` });
       continue;
     }
-    const active = await store.listProposals({ invoiceId: summary.id, status: ACTIVE_PROPOSAL });
+    const active = await store.listProposals({ invoiceId: summary.id, status: [...ACTIVE_PROPOSAL, ...NEEDS_HUMAN] });
     if (active.length) {
-      excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days, reason: "in_queue",
-        detail: `proposal ${active[0].id} is ${active[0].status}` });
+      const human = NEEDS_HUMAN.includes(active[0].status);
+      excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days,
+        reason: human ? "needs_human" : "in_queue", detail: `proposal ${active[0].id} is ${active[0].status}` });
       continue;
     }
     // Summaries omit notes and line items, so fetch the full record. Re-check status: it may have changed.

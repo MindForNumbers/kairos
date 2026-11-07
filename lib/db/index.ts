@@ -20,3 +20,8 @@ export function getStore(): Store {
 
 /** For tests: an isolated store (":memory:" or a temp file). */
 export { openSqliteStore as openStoreForTesting };
+
+/** For tests: make getStore() return this store (null clears it). */
+export function setStoreForTesting(store: Store | null): void {
+  g.__kairosStore = store ?? undefined;
+}

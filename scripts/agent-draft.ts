@@ -1,5 +1,6 @@
 // Stage 3 review: sweep + drafter, printed. Nothing is saved as a proposal and nothing is sent.
 // Run: npm run agent:draft
+import { createBudget } from "../lib/agent/budget";
 import { draft } from "../lib/agent/drafter";
 import { requiredFacts, wordCount } from "../lib/agent/policy";
 import { sweep } from "../lib/agent/sweep";
@@ -7,7 +8,7 @@ import { sweep } from "../lib/agent/sweep";
 async function main() {
   const s = await sweep();
   console.log(`Sweep ${s.asOf} (today ${s.today}): run set ${s.candidates.map((c) => c.invoiceNumber).join(", ")}; deferred ${s.deferred.map((c) => c.invoiceNumber).join(", ") || "none"}\n`);
-  const b = await draft(s.candidates);
+  const b = await draft(s.candidates, { budget: createBudget(null) });
   const byId = new Map(s.candidates.map((c) => [c.invoiceId, c]));
 
   for (const d of b.drafts) {
@@ -26,6 +27,6 @@ async function main() {
   if (b.missing.length) console.log(`Missing (no usable draft): ${b.missing.join(", ")}`);
   if (b.dropped.length) console.log(`Dropped by code: ${JSON.stringify(b.dropped)}`);
   if (b.failure) console.log(`Drafter failure: ${b.failure}`);
-  if (b.meta) console.log(`\n${b.meta.model} · ${b.meta.inputTokens} in / ${b.meta.outputTokens} out · ${b.meta.durationMs} ms · ${b.meta.requestId}`);
+  if (b.meta) console.log(`\n${b.meta.model} · ${b.meta.inputTokens} in / ${b.meta.outputTokens} out · $${b.meta.costUsd.toFixed(5)} · ${b.meta.durationMs} ms · ${b.meta.requestId}`);
 }
 main().catch((e) => { console.error(e); process.exit(1); });

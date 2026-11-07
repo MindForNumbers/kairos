@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
+import { assertPriced, costOf, maxCostOf } from "./pricing";
 
 /** Every model call in Kairos goes through this module. */
 export const MODEL = "claude-haiku-5-5";
@@ -35,6 +36,14 @@ export type StructuredCall<S extends z.ZodType> = {
   model?: string;
   effort?: Effort;
   maxTokens?: number;
+  /** Spend guard: checked with a worst-case estimate BEFORE the call, recorded AFTER. */
+  budget?: SpendGuard;
+};
+
+export type SpendGuard = {
+  /** Throw to stop the call (e.g. a cost cap would be exceeded). */
+  beforeCall(model: string, maxCostUsd: number, purpose: string): Promise<void>;
+  afterCall(meta: CallMeta): Promise<void>;
 };
 
 export type CallMeta = {
@@ -44,6 +53,10 @@ export type CallMeta = {
   stopReason: string | null;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Actual cost from token usage and lib/llm/pricing.ts. */
+  costUsd: number;
   /** sha256 of system+user, so the audit log can prove what was sent without storing customer text twice. */
   promptHash: string;
   durationMs: number;
@@ -53,47 +66,92 @@ export type StructuredResult<T> =
   | { ok: true; data: T; meta: CallMeta }
   | { ok: false; reason: "refusal" | "max_tokens" | "invalid_output"; detail?: string; meta: CallMeta };
 
-/**
- * One stateless call that returns schema-validated JSON (or a typed failure).
- * Never throws on a refusal or bad output. Callers decide what that means (usually "escalate").
- * API and network errors still throw as Anthropic.APIError subclasses.
- */
-export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S>): Promise<StructuredResult<z.infer<S>>> {
-  const started = Date.now(); // real-clock: measures latency
+// ---- Transport: the only code that talks to the API. Tests replace it. ------------
+
+export type TransportRequest = {
+  purpose: string; model: string; system: string; user: string; maxTokens: number; effort: Effort; schema: z.ZodType;
+};
+export type TransportResponse = {
+  model: string;
+  requestId: string | null;
+  stopReason: string | null;
+  refusalCategory: string | null;
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+  /** The first text block, expected to be JSON. */
+  text: string | null;
+};
+export type Transport = (req: TransportRequest) => Promise<TransportResponse>;
+
+const anthropicTransport: Transport = async (req) => {
   // create().withResponse() rather than parse(): parse() drops the request id, which the audit log needs.
-  // zodOutputFormat still constrains the output; we validate the JSON ourselves below.
+  // zodOutputFormat still constrains the output; the JSON is validated in structuredCall.
   const { data: response, request_id } = await getClient()
     .messages.create({
-      model: call.model ?? MODEL,
-      max_tokens: call.maxTokens ?? 16_000,
-      system: call.system,
-      messages: [{ role: "user", content: call.user }],
-      output_config: { effort: call.effort ?? "medium", format: zodOutputFormat(call.schema) },
+      model: req.model,
+      max_tokens: req.maxTokens,
+      system: req.system,
+      messages: [{ role: "user", content: req.user }],
+      output_config: { effort: req.effort, format: zodOutputFormat(req.schema) },
     })
     .withResponse();
-
-  const meta: CallMeta = {
-    purpose: call.purpose,
+  return {
     model: response.model,
     requestId: request_id ?? null,
     stopReason: response.stop_reason,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
+    refusalCategory: response.stop_reason === "refusal" ? (response.stop_details?.category ?? null) : null,
+    usage: {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+    },
+    text: response.content.find((b) => b.type === "text")?.text ?? null,
+  };
+};
+
+let transport: Transport = anthropicTransport;
+
+/** Tests only: route model calls to a stub (null restores the real API). */
+export function setTransportForTesting(t: Transport | null): void {
+  transport = t ?? anthropicTransport;
+}
+
+/**
+ * One stateless call that returns schema-validated JSON (or a typed failure).
+ * Never throws on a refusal or bad output. Callers decide what that means (usually "escalate").
+ * API and network errors still throw as Anthropic.APIError subclasses; a spend guard may throw too.
+ */
+export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S>): Promise<StructuredResult<z.infer<S>>> {
+  const model = call.model ?? MODEL;
+  const maxTokens = call.maxTokens ?? 16_000;
+  assertPriced(model);
+  await call.budget?.beforeCall(model, maxCostOf(model, call.system.length + call.user.length, maxTokens), call.purpose);
+
+  const started = Date.now(); // real-clock: measures latency
+  const res = await transport({ purpose: call.purpose, model, system: call.system, user: call.user, maxTokens, effort: call.effort ?? "medium", schema: call.schema });
+
+  const meta: CallMeta = {
+    purpose: call.purpose,
+    model: res.model,
+    requestId: res.requestId,
+    stopReason: res.stopReason,
+    ...res.usage,
+    costUsd: costOf(res.model, res.usage),
     promptHash: createHash("sha256").update(call.system).update("\0").update(call.user).digest("hex"),
     durationMs: Date.now() - started, // real-clock
   };
+  await call.budget?.afterCall(meta);
 
-  // Haiku 5.5 has no server-side refusal fallback, so a refusal is a terminal result here.
-  if (response.stop_reason === "refusal") {
-    return { ok: false, reason: "refusal", detail: response.stop_details?.category ?? undefined, meta };
+  // No server-side refusal fallback is configured, so a refusal is a terminal result here.
+  if (res.stopReason === "refusal") {
+    return { ok: false, reason: "refusal", detail: res.refusalCategory ?? undefined, meta };
   }
-  if (response.stop_reason === "max_tokens") {
+  if (res.stopReason === "max_tokens") {
     return { ok: false, reason: "max_tokens", meta };
   }
-  const text = response.content.find((b) => b.type === "text")?.text;
   let json: unknown;
   try {
-    json = JSON.parse(text ?? "");
+    json = JSON.parse(res.text ?? "");
   } catch {
     return { ok: false, reason: "invalid_output", detail: "response was not JSON", meta };
   }

@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getStore } from "@/lib/db";
-import { DRAFTER_MODEL, structuredCall, type CallMeta } from "@/lib/llm/client";
+import { DRAFTER_MODEL, structuredCall, type CallMeta, type SpendGuard } from "@/lib/llm/client";
 import { BODY_MAX_WORDS, SUBJECT_MAX_CHARS, assembleNote, planFor, type DraftPlan, type Tone } from "./policy";
 import { RUN_SIZE, type InvoiceRecord } from "./sweep";
 
@@ -46,7 +46,7 @@ export type DraftBatch = {
 // ---- Prompt -----------------------------------------------------------------
 
 const TONE_GUIDE: Record<Tone, string> = {
-  friendly: "Warm and brief. Assume it was overlooked. A light, polite nudge.",
+  friendly: "Warm and brief. Say the invoice may have been overlooked (never that we overlooked it). Politely ask for payment now. Never soften the request into \"when convenient\", \"at your convenience\", \"when you can\" or \"no rush\": that reads as no deadline.",
   firm: "Direct and professional. Clearly ask for payment now. No warmth padding, no blame.",
   final_notice: "Serious and formal. Say plainly that this is a final notice and ask for payment promptly. No threats.",
 };
@@ -71,7 +71,8 @@ action "remind": write a subject (under ${SUBJECT_MAX_CHARS} characters) and a b
 - Never offer or hint at a discount, waiver, write-off, refund, credit, extension, payment plan or new due date.
 - Never say or imply the invoice is paid, cancelled, disputed or changed, and never claim any action was taken.
 - Make no promises and no threats: no late fees, collections, legal action or service suspension.
-- No sign-off ("Thank you", "Regards" and similar are added by the system).
+- No sign-off and no thanks of any kind ("Thank you", "We appreciate your business", "thank you for your attention"): the system adds the only "Thank you."
+- Never suggest the business made a mistake or overlooked anything.
 Set escalationReason to null.
 
 action "escalate" (subject and body null): only when <untrusted_data> shows a reminder could be inappropriate. Examples: the customer disputes the charge, says they already paid, complains about the work, asks not to be contacted, or mentions bankruptcy or legal action. Give a one-sentence escalationReason in your own words, without quoting the data.
@@ -141,7 +142,7 @@ export function reconcile(plans: DraftPlan[], out: DraftOutput | null, failure: 
 
 // ---- Entry point -----------------------------------------------------------------
 
-export async function draft(records: InvoiceRecord[], opts: { feedback?: RevisionFeedback[]; only?: string[] } = {}): Promise<DraftBatch> {
+export async function draft(records: InvoiceRecord[], opts: { feedback?: RevisionFeedback[]; only?: string[]; budget?: SpendGuard } = {}): Promise<DraftBatch> {
   if (records.length > RUN_SIZE) throw new Error(`drafter got ${records.length} invoices; max is ${RUN_SIZE}`);
   const store = getStore();
   const plans = records.map(planFor).filter((p) => !opts.only || opts.only.includes(p.invoiceId));
@@ -159,6 +160,7 @@ export async function draft(records: InvoiceRecord[], opts: { feedback?: Revisio
       schema: DraftOutput,
       effort: "medium",
       maxTokens: 8000,
+      budget: opts.budget,
     });
     meta = res.meta;
     if (res.ok) out = res.data;
@@ -173,7 +175,7 @@ export async function draft(records: InvoiceRecord[], opts: { feedback?: Revisio
     entityId: null,
     data: {
       model: meta?.model ?? null, requestId: meta?.requestId ?? null, promptHash: meta?.promptHash ?? null,
-      tokens: meta ? { in: meta.inputTokens, out: meta.outputTokens } : null,
+      tokens: meta ? { in: meta.inputTokens, out: meta.outputTokens } : null, costUsd: meta?.costUsd ?? null,
       revision: Boolean(opts.feedback?.length),
       drafts: result.drafts.map((d) => ({ invoiceId: d.invoiceId, tone: d.tone })),
       escalations: result.escalations, missing: result.missing, dropped: result.dropped, failure,

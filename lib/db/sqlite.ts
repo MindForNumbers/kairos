@@ -111,6 +111,27 @@ const MIGRATIONS: string[] = [
   CREATE TRIGGER audit_no_delete BEFORE DELETE ON audit_log
   BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
   `,
+  `
+  CREATE TABLE model_calls (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    at                 TEXT NOT NULL,
+    run_id             TEXT REFERENCES runs(id),
+    purpose            TEXT NOT NULL,
+    model              TEXT NOT NULL,
+    request_id         TEXT,
+    input_tokens       INTEGER NOT NULL,
+    output_tokens      INTEGER NOT NULL,
+    cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd           REAL NOT NULL CHECK (cost_usd >= 0)
+  );
+  CREATE INDEX model_calls_at  ON model_calls(at);
+  CREATE INDEX model_calls_run ON model_calls(run_id);
+  CREATE TRIGGER model_calls_no_update BEFORE UPDATE ON model_calls
+  BEGIN SELECT RAISE(ABORT, 'model_calls is append-only'); END;
+  CREATE TRIGGER model_calls_no_delete BEFORE DELETE ON model_calls
+  BEGIN SELECT RAISE(ABORT, 'model_calls is append-only'); END;
+  `,
 ];
 
 const now = nowIso;
@@ -320,6 +341,22 @@ export function openSqliteStore(path: string): Store {
         ? db.prepare("SELECT * FROM send_ledger WHERE invoice_id = ? ORDER BY sent_at DESC LIMIT ?").all(filter.invoiceId, filter.limit ?? 100)
         : db.prepare("SELECT * FROM send_ledger ORDER BY sent_at DESC LIMIT ?").all(filter.limit ?? 100);
       return (rows as Row[]).map(toLedger);
+    },
+
+    async recordModelCall(c) {
+      db.prepare(`INSERT INTO model_calls (at, run_id, purpose, model, request_id, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(now(), c.runId, c.purpose, c.model, c.requestId, c.inputTokens, c.outputTokens, c.cacheReadTokens, c.cacheWriteTokens, c.costUsd);
+    },
+
+    async modelSpendSince(since) {
+      return (db.prepare("SELECT COALESCE(SUM(cost_usd), 0) s FROM model_calls WHERE at >= ?").get(since.toISOString()) as { s: number }).s;
+    },
+
+    async modelSpendForRun(runId) {
+      const rows = db.prepare(`SELECT purpose, COUNT(*) calls, SUM(cost_usd) cost, SUM(input_tokens) i, SUM(output_tokens) o
+        FROM model_calls WHERE run_id = ? GROUP BY purpose`).all(runId) as { purpose: string; calls: number; cost: number; i: number; o: number }[];
+      const byPurpose = Object.fromEntries(rows.map((r) => [r.purpose, { calls: r.calls, costUsd: r.cost, inputTokens: r.i, outputTokens: r.o }]));
+      return { totalUsd: rows.reduce((s, r) => s + r.cost, 0), byPurpose };
     },
 
     async audit(e) {

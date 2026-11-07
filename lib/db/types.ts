@@ -95,6 +95,20 @@ export type AuditEvent = {
   data: unknown;
 };
 
+export type ModelCall = {
+  id: number;
+  at: string;
+  runId: string | null;
+  purpose: string;
+  model: string;
+  requestId: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+};
+
 export type ClaimResult =
   | { ok: true; approval: Approval }
   | { ok: false; reason: "not_found" | "expired" | "already_used" | "in_progress" };
@@ -127,6 +141,11 @@ export interface Store {
   lastSendFor(invoiceId: string): Promise<LedgerEntry | null>;
   countSendsSince(since: Date): Promise<number>;
   listLedger(filter?: { invoiceId?: string; limit?: number }): Promise<LedgerEntry[]>;
+
+  // model spend (append-only)
+  recordModelCall(call: Omit<ModelCall, "id" | "at">): Promise<void>;
+  modelSpendSince(since: Date): Promise<number>;
+  modelSpendForRun(runId: string): Promise<{ totalUsd: number; byPurpose: Record<string, { calls: number; costUsd: number; inputTokens: number; outputTokens: number }> }>;
 
   // audit log
   audit(event: Omit<AuditEvent, "id" | "at">): Promise<void>;
