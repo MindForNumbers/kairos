@@ -1,14 +1,14 @@
 :root {
   --bg: #f7f7f5; --surface: #fff; --text: #1a1a1a; --muted: #6b6b6b;
-  --border: #e3e3df; --accent: #1f4fd1; --danger: #b42318; --ok: #067647; --warn: #b54708;
+  --border: #e3e3df; --accent: #0f6b5c; --accent-soft: #e6f2ef; --danger: #b42318; --ok: #067647; --warn: #b54708;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #141414; --surface: #1d1d1d; --text: #ececec; --muted: #9a9a9a; --border: #2e2e2e; --accent: #7aa2ff; --danger: #ff8a7a; --ok: #6fd3a0; --warn: #f5b66b; }
+  :root { --bg: #141414; --surface: #1d1d1d; --text: #ececec; --muted: #9a9a9a; --border: #2e2e2e; --accent: #5cc4ae; --accent-soft: #15302b; --danger: #ff8a7a; --ok: #6fd3a0; --warn: #f5b66b; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
-main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
 a { color: var(--accent); }
 h1 { font-size: 1.5rem; margin: 0 0 16px; }
 h2 { font-size: 1.1rem; margin: 24px 0 8px; }
@@ -90,3 +90,46 @@ code { font-size: .85em; background: var(--bg); border: 1px solid var(--border);
 .ok-step strong { color: var(--ok); }
 .fail-step strong { color: var(--danger); }
 .request pre { white-space: pre-wrap; word-break: break-word; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: .8rem; }
+
+/* ---- Stage 7a: Test Store shell ---- */
+.topbar { gap: 16px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: 0; }
+.brand-mark { width: 30px; height: 30px; border-radius: 8px; background: var(--text); color: var(--surface); display: grid; place-items: center; font-size: .78rem; font-weight: 700; letter-spacing: .02em; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.1; }
+.brand-name { font-weight: 700; }
+.brand-sub { font-size: .72rem; color: var(--muted); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.connection { font-size: .75rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+.nav { gap: 4px; }
+.nav .nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: .9rem; }
+.nav .nav-link:hover { color: var(--text); background: var(--bg); }
+.nav .nav-link.active { color: var(--text); background: var(--bg); font-weight: 600; }
+.nav-badge { min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--surface); font-size: .72rem; font-weight: 700; text-align: center; }
+.nav .button { margin-left: 8px; }
+.subtitle { margin: -4px 0 0; }
+.page-head { justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+
+/* home */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 28px; }
+.tile { display: flex; flex-direction: column; gap: 4px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; color: var(--text); text-decoration: none; transition: border-color .15s; }
+.tile:hover { border-color: var(--accent); }
+.tile-label { font-size: .8rem; color: var(--muted); }
+.tile-value { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tile-note { font-size: .8rem; color: var(--muted); }
+.tile-warn .tile-value { color: var(--warn); }
+.tile-accent .tile-value { color: var(--accent); }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; }
+.late { margin-left: 8px; font-size: .72rem; color: var(--danger); font-weight: 600; }
+
+/* approvals: run agent */
+.run-agent { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 460px; }
+.run-result { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: .85rem; text-align: right; }
+@media (max-width: 640px) {
+  .run-agent, .run-result { align-items: flex-start; text-align: left; }
+  .connection { order: 3; }
+}
+
+/* Tables scroll inside their card on narrow screens instead of widening the page. */
+.card { overflow-x: auto; }
+@media (max-width: 640px) { .hide-sm { display: none; } }
+.page-head > div:first-child { flex: 1 1 380px; min-width: 0; }
+.page-head > .run-agent { flex: 0 0 auto; }

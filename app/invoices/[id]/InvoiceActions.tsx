@@ -40,7 +40,7 @@ export default function InvoiceActions({ id, status, dueAmount }: { id: string; 
         throw new Error(`${b.error ?? res.status}: ${b.message ?? ""}${b.debug_id ? `\ndebug_id: ${b.debug_id}` : ""}`);
       }
       if (action === "delete") {
-        router.push("/");
+        router.push("/invoices");
       } else {
         setShowPayment(false);
       }

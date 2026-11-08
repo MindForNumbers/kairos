@@ -12,6 +12,8 @@ import { costCaps } from "@/lib/agent/budget";
 import { isStale, liveApproval } from "@/lib/queue/actions";
 import { RULES_VERSION } from "@/lib/agent/rules-version";
 import { ApproveControls, ResolveControls } from "./Controls";
+import RunAgentButton from "./RunAgentButton";
+import { DRAFTER_MODEL, criticModel } from "@/lib/llm/client";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +22,7 @@ type Review = { round?: number; code?: Issue[]; critic?: Issue[] | string; criti
 const TONE_LABEL: Record<string, string> = { friendly: "Friendly", firm: "Firm", final_notice: "Final notice" };
 
 export default async function AgentPage() {
-  await requirePageSession("/agent");
+  await requirePageSession("/approvals");
   const store = getStore();
 
   const [queue, human, closed, runs] = await Promise.all([
@@ -66,7 +68,11 @@ export default async function AgentPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Collections agent</h1>
+        <div>
+          <h1>Approvals</h1>
+          <p className="muted subtitle">Kairos finds overdue invoices, drafts reminders and checks them. Nothing reaches a customer until you approve it here.</p>
+        </div>
+        <RunAgentButton />
         {isOverridden() && <span className="badge">Clock override (KAIROS_NOW): today is {today}</span>}
       </div>
 
@@ -74,7 +80,7 @@ export default async function AgentPage() {
         <div><label>Last run</label>{lastRun ? <><div>{fmtTime(lastRun.startedAt)}</div><div className="muted">{lastRun.status}{report?.halted ? ` · halted (${report.halted.cap} cap)` : ""}</div></> : <div className="muted">No runs yet</div>}</div>
         <div><label>Last run cost</label><div>{report?.cost ? `$${report.cost.totalUsd.toFixed(4)}` : "—"}</div><div className="muted">cap ${caps.runUsd.toFixed(2)} per run</div></div>
         <div><label>Spent today</label><div>${spentToday.toFixed(4)}</div><div className="muted">cap ${caps.dailyUsd.toFixed(2)} per day</div></div>
-        <div><label>Models</label><div>{report?.models ? `${report.models.drafter.join(", ")} → ${report.models.critic.join(", ")}` : "—"}</div><div className="muted">drafter → critic</div></div>
+        <div><label>Models</label><div>{`${report?.models?.drafter?.length ? report.models.drafter.join(", ") : DRAFTER_MODEL} → ${report?.models?.critic?.length ? report.models.critic.join(", ") : criticModel()}`}</div><div className="muted">drafter → critic</div></div>
         <div><label>Rules version</label><div data-rules-version={RULES_VERSION}>{RULES_VERSION}</div><div className="muted">drafts from other versions are stale</div></div>
         <div>
           <label>Sending</label>
@@ -146,7 +152,7 @@ export default async function AgentPage() {
           </table>
         </div>
       )}
-      <p className="muted footer-note">Run the agent with <code>npm run agent:run</code>. Every decision on this page is written to the audit log.</p>
+      <p className="muted footer-note">"Run agent" sweeps for overdue invoices and drafts reminders; it never sends. Every decision on this page is written to the audit log.</p>
     </>
   );
 }

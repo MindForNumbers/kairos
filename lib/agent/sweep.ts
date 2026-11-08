@@ -15,7 +15,7 @@ export const RUN_SIZE = 5;
 export const REMINDER_COOLDOWN_DAYS = 7;
 
 /** Statuses where the customer still owes money and a reminder makes sense. */
-const CHASEABLE = new Set(["SENT", "UNPAID", "PARTIALLY_PAID"]);
+export const CHASEABLE = new Set(["SENT", "UNPAID", "PARTIALLY_PAID"]);
 /** Proposal states that mean "already being handled". Don't draft again. */
 const ACTIVE_PROPOSAL: ProposalStatus[] = ["pending_review", "passed", "approved"];
 /** Waiting on a human in "Needs a human". Don't re-draft until someone resolves it. */
@@ -60,7 +60,7 @@ export type SweepResult = {
   truncated: boolean;
 };
 
-function dueDateOf(inv: Invoice): string | null {
+export function dueDateOf(inv: Invoice): string | null {
   return inv.detail.payment_term?.due_date ?? inv.detail.invoice_date ?? null;
 }
 

@@ -26,7 +26,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <p><Link href="/">← Invoices</Link></p>
+      <p><Link href="/invoices">← Invoices</Link></p>
       <h1>
         Invoice {inv.detail.invoice_number ?? inv.id}{" "}
         <span className={`status status-${inv.status}`}>{inv.status.replaceAll("_", " ")}</span>
