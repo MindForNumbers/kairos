@@ -5,6 +5,7 @@ import { checkCoverage, checkDraft, decide, type Issue, type KnownInvoice } from
 import { critique, type CriticResult } from "./critic";
 import { draft, type Draft, type DraftBatch, type RevisionFeedback } from "./drafter";
 import { planFor, type DraftPlan } from "./policy";
+import { RULES_VERSION } from "./rules-version";
 import { sweep, type InvoiceRecord, type SweepResult } from "./sweep";
 
 /**
@@ -56,6 +57,8 @@ export type RunReport = {
   cost: { totalUsd: number; byPurpose: Record<string, { calls: number; costUsd: number; inputTokens: number; outputTokens: number }>; caps: { runUsd: number; dailyUsd: number } };
   /** Set when a spend cap stopped the run. Unreviewed drafts were blocked. */
   halted: { cap: "run" | "daily"; message: string } | null;
+  /** Rules fingerprint every proposal in this run was stamped with. */
+  rulesVersion: string;
 };
 
 function knownInvoices(s: SweepResult): KnownInvoice[] {
@@ -101,6 +104,7 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
     models: { drafter: [...models.drafter], critic: [...models.critic] },
     cost: { ...(await store.modelSpendForRun(run.id)), caps: costCaps() },
     halted,
+    rulesVersion: RULES_VERSION,
   });
 
   try {
@@ -111,14 +115,14 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
       if (batch.meta) models.drafter.add(batch.meta.model);
       for (const d of batch.drafts) {
         const parent = current.get(d.invoiceId)?.proposal;
-        const p = await store.createProposal({ runId: run.id, parentId: parent?.id ?? null, invoiceId: d.invoiceId, kind: "reminder", tone: d.tone, subject: d.subject, note: d.note });
+        const p = await store.createProposal({ runId: run.id, parentId: parent?.id ?? null, invoiceId: d.invoiceId, kind: "reminder", tone: d.tone, subject: d.subject, note: d.note, rulesVersion: RULES_VERSION });
         if (parent) await store.updateProposalStatus(parent.id, { status: "revised" }, ["pending_review"]);
         current.set(d.invoiceId, { proposal: p, draft: d });
       }
       for (const e of batch.escalations) {
         const parent = current.get(e.invoiceId)?.proposal;
         const reason = `${e.source === "policy" ? "Policy" : "Drafter"}: ${e.reason}`;
-        const p = await store.createProposal({ runId: run.id, parentId: parent?.id ?? null, invoiceId: e.invoiceId, kind: "escalate", tone: null, subject: null, note: null, status: "escalated", reason });
+        const p = await store.createProposal({ runId: run.id, parentId: parent?.id ?? null, invoiceId: e.invoiceId, kind: "escalate", tone: null, subject: null, note: null, status: "escalated", reason, rulesVersion: RULES_VERSION });
         if (parent) await store.updateProposalStatus(parent.id, { status: "revised" }, ["pending_review"]);
         current.set(e.invoiceId, { proposal: p, draft: null });
         settled.set(e.invoiceId, { invoiceId: e.invoiceId, invoiceNumber: numberOf(e.invoiceId), outcome: "escalated", proposalId: p.id, reason });

@@ -1,3 +1,4 @@
+import { requirePageSession } from "@/lib/auth-server";
 import Link from "next/link";
 import { listInvoices } from "@/lib/paypal/invoices";
 import { PayPalError } from "@/lib/paypal/client";
@@ -6,6 +7,7 @@ import { money, recipientLabel } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  await requirePageSession("/");
   const page = Math.max(1, Number((await searchParams).page) || 1);
 
   let data;

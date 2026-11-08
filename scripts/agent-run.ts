@@ -41,7 +41,7 @@ async function main() {
     throw new Error("Run --faults against a separate DB, e.g. KAIROS_DB_PATH=data/fault-demo.db, so demo proposals don't enter the real queue");
   }
   const r = await runAgent({ afterDraft: injectFaults });
-  console.log(`\nRun ${r.runId} · as of ${r.sweep.asOf} · ${r.rounds} round(s) · drafter ${r.models.drafter.join(",")} · critic ${r.models.critic.join(",")}`);
+  console.log(`\nRun ${r.runId} · rules ${r.rulesVersion} · as of ${r.sweep.asOf} · ${r.rounds} round(s) · drafter ${r.models.drafter.join(",")} · critic ${r.models.critic.join(",")}`);
   console.log(`Set: ${r.trace.length ? "" : "(no drafts)"}${r.outcomes.map((o) => o.invoiceNumber).join(", ")} · deferred: ${r.sweep.deferred.length} · excluded: ${r.sweep.excluded.map((e) => `${e.invoiceNumber} (${e.reason})`).join(", ") || "none"}`);
 
   for (const round of [...new Set(r.trace.map((t) => t.round))]) {

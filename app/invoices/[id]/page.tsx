@@ -1,3 +1,4 @@
+import { requirePageSession } from "@/lib/auth-server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getInvoice } from "@/lib/paypal/invoices";
@@ -8,6 +9,7 @@ import InvoiceActions from "./InvoiceActions";
 export const dynamic = "force-dynamic";
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
+  await requirePageSession(`/invoices/${(await params).id}`);
   const { id } = await params;
 
   let inv;

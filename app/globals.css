@@ -38,3 +38,47 @@ input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(
 .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
 .check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: .9rem; }
 .check input { width: auto; }
+
+/* ---- nav, login ---- */
+.brand { margin-right: 0; }
+.nav { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+.nav a:not(.button) { color: var(--text); text-decoration: none; font-size: .9rem; }
+.login { max-width: 360px; margin: 64px auto; }
+code { font-size: .85em; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+
+/* ---- agent page ---- */
+.page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.page-head h1 { margin: 0 0 8px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.count { display: inline-block; min-width: 1.6em; padding: 0 6px; border-radius: 999px; background: var(--border); font-size: .8rem; text-align: center; vertical-align: middle; }
+.section-help { margin: -4px 0 12px; font-size: .88rem; }
+.proposal { margin-bottom: 14px; }
+.proposal.human { border-left: 3px solid var(--warn); }
+.proposal-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.proposal-head .inv { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.amount { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.amount .muted { font-weight: 400; font-size: .85rem; }
+.pill { font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.pill.ok { color: var(--ok); border-color: var(--ok); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+.tone-friendly { color: var(--ok); border-color: var(--ok); }
+.tone-firm { color: var(--warn); border-color: var(--warn); }
+.tone-final_notice { color: var(--danger); border-color: var(--danger); }
+.draft { display: grid; gap: 10px; margin-bottom: 12px; }
+.note-text { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; line-height: 1.45; }
+.checks table td, .checks table th { padding: 6px 8px; font-size: .84rem; vertical-align: top; }
+.checks td:first-child { width: 46%; }
+.ok { color: var(--ok); font-weight: 600; }
+.fail { color: var(--danger); }
+.history { margin-top: 10px; font-size: .85rem; }
+.history summary { cursor: pointer; color: var(--muted); }
+.reason { margin: 0 0 12px; }
+.untrusted { margin: 12px 0; }
+.untrusted blockquote { margin: 6px 0 0; padding: 8px 12px; border-left: 3px solid var(--warn); background: var(--bg); white-space: pre-wrap; font-size: .9rem; }
+.flags { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.controls.resolve input { flex: 1 1 260px; }
+.approved { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.footer-note { margin-top: 24px; font-size: .85rem; }
+@media (max-width: 640px) { .amount { text-align: left; } .nav { gap: 8px; } }
+.pill.stale { color: var(--danger); border-color: var(--danger); }

@@ -1,6 +1,6 @@
 import "server-only";
 import { daysBetween, localDate, now, nowMs, timezone } from "@/lib/clock";
-import { getStore, type ProposalStatus } from "@/lib/db";
+import { getStore, type Proposal, type ProposalStatus } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "./paypal-read";
 import { GRACE_DAYS } from "./policy";
 import { cleanUntrusted, flagUntrusted } from "./untrusted";
@@ -115,6 +115,17 @@ export function toRecord(inv: Invoice, today: string, lastReminderAt: string | n
   };
 }
 
+/**
+ * The proposal that keeps an invoice out of a run, if any: one in the queue, or a
+ * blocked/escalated one a human hasn't resolved or dismissed yet.
+ */
+export async function holdingProposal(invoiceId: string): Promise<{ proposal: Proposal; reason: "in_queue" | "needs_human" } | null> {
+  const held = (await getStore().listProposals({ invoiceId, status: [...ACTIVE_PROPOSAL, ...NEEDS_HUMAN] }))
+    .filter((p) => !(NEEDS_HUMAN.includes(p.status) && p.resolution));
+  if (!held.length) return null;
+  return { proposal: held[0], reason: NEEDS_HUMAN.includes(held[0].status) ? "needs_human" : "in_queue" };
+}
+
 export async function sweep(): Promise<SweepResult> {
   const store = getStore();
   const asOf = now();
@@ -144,11 +155,10 @@ export async function sweep(): Promise<SweepResult> {
         detail: `last reminder ${last.sentAt} (${last.source})` });
       continue;
     }
-    const active = await store.listProposals({ invoiceId: summary.id, status: [...ACTIVE_PROPOSAL, ...NEEDS_HUMAN] });
-    if (active.length) {
-      const human = NEEDS_HUMAN.includes(active[0].status);
+    const hold = await holdingProposal(summary.id);
+    if (hold) {
       excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days,
-        reason: human ? "needs_human" : "in_queue", detail: `proposal ${active[0].id} is ${active[0].status}` });
+        reason: hold.reason, detail: `proposal ${hold.proposal.id} is ${hold.proposal.status}` });
       continue;
     }
     // Summaries omit notes and line items, so fetch the full record. Re-check status: it may have changed.

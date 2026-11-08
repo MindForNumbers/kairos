@@ -58,7 +58,14 @@ export type Proposal = DraftContent & {
   review: unknown;
   createdAt: string;
   updatedAt: string;
+  /** Rules fingerprint (lib/agent/rules-version.ts) the proposal was made and reviewed under. null = before stamping. */
+  rulesVersion: string | null;
+  /** Set when a human resolved or dismissed a blocked/escalated proposal. Frees the invoice for future runs. */
+  resolution: Resolution | null;
 };
+
+export type ResolutionAction = "resolved" | "dismissed";
+export type Resolution = { action: ResolutionAction; note: string | null; actor: string; at: string };
 
 export type Approval = {
   id: string;
@@ -121,13 +128,17 @@ export interface Store {
   listRuns(limit?: number): Promise<Run[]>;
 
   // proposals
-  createProposal(input: DraftContent & { runId: string; parentId?: string | null; status?: ProposalStatus; reason?: string | null }): Promise<Proposal>;
+  createProposal(input: DraftContent & { runId: string; parentId?: string | null; status?: ProposalStatus; reason?: string | null; rulesVersion?: string | null }): Promise<Proposal>;
   /** Only status, reason and review can change. `expected` makes the transition a compare-and-set. */
   updateProposalStatus(id: string, patch: { status: ProposalStatus; reason?: string | null; review?: unknown }, expected?: ProposalStatus[]): Promise<boolean>;
   getProposal(id: string): Promise<Proposal | null>;
   listProposals(filter?: { status?: ProposalStatus[]; runId?: string; invoiceId?: string }): Promise<Proposal[]>;
 
+  /** Human closes a blocked/escalated item (once). Throws if the proposal isn't blocked/escalated or is already resolved. */
+  resolveProposal(input: { proposalId: string; action: ResolutionAction; note: string | null; actor: string }): Promise<Proposal>;
+
   // approvals (single-use tokens)
+  listApprovals(proposalId: string): Promise<Approval[]>;
   createApproval(input: { proposalId: string; tokenHash: string; draftHash: string; approvedBy: string; ttlMs: number }): Promise<Approval>;
   /** Atomically lock an unexpired, unused token so two executors can't both act on it. */
   claimApproval(tokenHash: string, now?: Date): Promise<ClaimResult>;

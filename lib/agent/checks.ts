@@ -29,6 +29,9 @@ const THREAT = /\b(?:late fees?|penalt(?:y|ies)|interest charges?|collections?|l
 const CONCESSION = /\b(?:discount(?:ed|s)?|\d{1,3}\s?(?:%|percent)(?:\s+off)?|percent\s+off|waive[ds]?|waiver|forgiv(?:e|en|eness)|write[- ]?off|written off|extension|extend(?:ed|ing)?|payment plan|instal(?:l)?ments?|split (?:the |your )?payment|partial payment|refund(?:ed)?|credit(?:ed)?|reduc(?:e|ed|tion)|lower(?:ed)? (?:amount|price|balance)|no (?:rush|hurry)|take your time|whenever you (?:can|like|want)|no longer (?:owe|due)|grace period|when(?:ever)?\s+(?:it(?:'|’)?s\s+|it\s+is\s+)?convenient|at\s+your\s+(?:earliest\s+)?convenience|when(?:ever)?\s+(?:you\s+)?(?:can|are able)\b|when\s+you\s+(?:have|get)\s+(?:a\s+)?(?:moment|chance|minute)|if\s+you\s+have\s+a\s+(?:moment|chance|minute)|work\s+(?:something|this|it|things)\s+out|work\s+with\s+you|figure\s+(?:something|this|it)\s+out|(?:come\s+to|make|set\s+up)\s+(?:an?\s+)?(?:arrangement|agreement)|arrangement|flexib(?:le|ility)|if\s+(?:the\s+full\s+amount|paying|payment|it)\s+is\s+(?:difficult|hard|a\s+problem|tough|an?\s+issue)|(?:need|want)\s+(?:more|extra|additional)\s+time)\b/i;
 const STATUS_CLAIM = /\b(?:has been|have been|is|was|been|now|marked|mark(?:ed)?|consider(?:ed)?)\s+(?:as\s+)?(?:fully\s+)?(?:paid|settled|cancel+ed|voided?|closed|resolved)\b|\bmark(?:ed|ing)?\b.{0,30}\b(?:paid|settled|closed)\b/i;
 
+/** Every pattern the checks use, for the rules version fingerprint. */
+export const CHECK_PATTERNS = { MONEY, EMAIL, DURATION, DATE, EMAIL_DESCRIPTION, THREAT, CONCESSION, STATUS_CLAIM };
+
 const norm = (s: string) => s.replace(/[\s,]/g, "").toLowerCase();
 
 export function checkDraft(draft: Draft, plan: Extract<DraftPlan, { action: "draft" }>, known: KnownInvoice[]): Issue[] {

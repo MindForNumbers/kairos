@@ -45,7 +45,7 @@ export type DraftBatch = {
 
 // ---- Prompt -----------------------------------------------------------------
 
-const TONE_GUIDE: Record<Tone, string> = {
+export const TONE_GUIDE: Record<Tone, string> = {
   friendly: "Warm and brief. Say the invoice may have been overlooked (never that we overlooked it). Politely ask for payment now. Never soften the request into \"when convenient\", \"at your convenience\", \"when you can\" or \"no rush\": that reads as no deadline.",
   firm: "Direct and professional. Clearly ask for payment now. No warmth padding, no blame.",
   final_notice: "Serious and formal. Say plainly that this is a final notice and ask for payment promptly. No threats.",

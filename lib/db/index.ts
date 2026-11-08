@@ -14,7 +14,8 @@ const g = globalThis as unknown as { __kairosStore?: Store };
  * implements `Store` and pick it here (e.g. when DATABASE_URL is set).
  */
 export function getStore(): Store {
-  g.__kairosStore ??= openSqliteStore(resolve(process.env.KAIROS_DB_PATH ?? "data/kairos.db"));
+  // turbopackIgnore: the DB path is runtime data, not a source file to trace into the build.
+  g.__kairosStore ??= openSqliteStore(resolve(/*turbopackIgnore: true*/ process.env.KAIROS_DB_PATH ?? "data/kairos.db"));
   return g.__kairosStore;
 }
 

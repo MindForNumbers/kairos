@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authorize } from "@/lib/auth";
 import {
   createDraftInvoice, createInvoiceSchema, findInvoiceByNumber, isDuplicateInvoiceNumber,
   listInvoices, sendInvoice, type CreateInvoiceInput, type Invoice,
@@ -6,6 +7,8 @@ import {
 import { errorResponse, idempotencyKey } from "@/lib/http";
 
 export async function GET(req: Request) {
+  const denied = authorize(req);
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
@@ -36,6 +39,8 @@ async function findReplay(input: CreateInvoiceInput): Promise<Invoice | undefine
 
 /** Create a draft. Pass `?send=true` to send it immediately after creation. */
 export async function POST(req: Request) {
+  const denied = authorize(req);
+  if (denied) return denied;
   try {
     const input = createInvoiceSchema.parse(await req.json());
     const key = idempotencyKey(req);

@@ -44,7 +44,7 @@ const rules = [
   {
     name: "lib/agent/ makes no HTTP calls and never touches /api routes or the executor",
     applies: (f) => f.startsWith("lib/agent/"),
-    forbid: /\bfetch\(|["'`]\/api\/|lib\/executor|from\s+["']node:(http|https|net)["']/,
+    forbid: /\bfetch\(|["'`]\/api\/|lib\/(executor|queue|auth)|from\s+["']node:(http|https|net)["']/,
   },
   {
     name: "Business time comes from lib/clock.ts (mark genuine real-time reads with a real-clock comment)",

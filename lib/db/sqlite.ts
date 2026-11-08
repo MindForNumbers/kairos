@@ -132,7 +132,36 @@ const MIGRATIONS: string[] = [
   CREATE TRIGGER model_calls_no_delete BEFORE DELETE ON model_calls
   BEGIN SELECT RAISE(ABORT, 'model_calls is append-only'); END;
   `,
+  `
+  CREATE TABLE resolutions (
+    id          TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL UNIQUE REFERENCES proposals(id),
+    action      TEXT NOT NULL CHECK (action IN ('resolved','dismissed')),
+    note        TEXT,
+    actor       TEXT NOT NULL,
+    at          TEXT NOT NULL
+  );
+  CREATE TRIGGER resolutions_no_update BEFORE UPDATE ON resolutions
+  BEGIN SELECT RAISE(ABORT, 'resolutions are append-only'); END;
+  CREATE TRIGGER resolutions_no_delete BEFORE DELETE ON resolutions
+  BEGIN SELECT RAISE(ABORT, 'resolutions are append-only'); END;
+  `,
+  `
+  ALTER TABLE proposals ADD COLUMN rules_version TEXT;
+  DROP TRIGGER proposals_content_immutable;
+  CREATE TRIGGER proposals_content_immutable BEFORE UPDATE ON proposals
+  WHEN NEW.id IS NOT OLD.id OR NEW.run_id IS NOT OLD.run_id OR NEW.parent_id IS NOT OLD.parent_id
+    OR NEW.revision IS NOT OLD.revision OR NEW.invoice_id IS NOT OLD.invoice_id OR NEW.kind IS NOT OLD.kind
+    OR NEW.tone IS NOT OLD.tone OR NEW.subject IS NOT OLD.subject OR NEW.note IS NOT OLD.note
+    OR NEW.draft_hash IS NOT OLD.draft_hash OR NEW.created_at IS NOT OLD.created_at
+    OR NEW.rules_version IS NOT OLD.rules_version
+  BEGIN SELECT RAISE(ABORT, 'proposal content is immutable'); END;
+  `,
 ];
+
+/** Proposal columns plus its resolution (if any). */
+const PROPOSAL_SELECT = `SELECT p.*, r.action AS r_action, r.note AS r_note, r.actor AS r_actor, r.at AS r_at
+  FROM proposals p LEFT JOIN resolutions r ON r.proposal_id = p.id`;
 
 const now = nowIso;
 const id = (prefix: string) => `${prefix}_${randomUUID().replaceAll("-", "")}`;
@@ -152,6 +181,10 @@ const toProposal = (r: Row): Proposal => ({
   subject: r.subject as string | null, note: r.note as string | null, draftHash: r.draft_hash as string,
   status: r.status as ProposalStatus, reason: r.reason as string | null, review: unjson(r.review as string | null),
   createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  rulesVersion: (r.rules_version as string | null) ?? null,
+  resolution: r.r_action
+    ? { action: r.r_action as "resolved" | "dismissed", note: r.r_note as string | null, actor: r.r_actor as string, at: r.r_at as string }
+    : null,
 });
 
 const toApproval = (r: Row): Approval => ({
@@ -192,7 +225,7 @@ export function openSqliteStore(path: string): Store {
   const writeAudit = (e: Omit<AuditEvent, "id" | "at">) =>
     insertAudit.run(now(), e.actor, e.event, e.entityType, e.entityId, json(e.data));
 
-  const getProposalRow = db.prepare("SELECT * FROM proposals WHERE id = ?");
+  const getProposalRow = db.prepare(`${PROPOSAL_SELECT} WHERE p.id = ?`);
 
   const store: Store = {
     async createRun(sweep) {
@@ -224,11 +257,11 @@ export function openSqliteStore(path: string): Store {
       const ts = now();
       const pid = id("prp");
       db.prepare(`INSERT INTO proposals
-        (id, run_id, parent_id, revision, invoice_id, kind, tone, subject, note, draft_hash, status, reason, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (id, run_id, parent_id, revision, invoice_id, kind, tone, subject, note, draft_hash, status, reason, created_at, updated_at, rules_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         pid, input.runId, input.parentId ?? null, parent ? (parent.revision as number) + 1 : 0,
         content.invoiceId, content.kind, content.tone, content.subject, content.note, hashDraft(content),
-        input.status ?? "pending_review", input.reason ?? null, ts, ts,
+        input.status ?? "pending_review", input.reason ?? null, ts, ts, input.rulesVersion ?? null,
       );
       return toProposal(getProposalRow.get(pid) as Row);
     },
@@ -255,13 +288,31 @@ export function openSqliteStore(path: string): Store {
       const where: string[] = [];
       const params: Record<string, unknown> = {};
       if (filter.status?.length) {
-        where.push(`status IN (${filter.status.map((_, i) => `@s${i}`).join(", ")})`);
+        where.push(`p.status IN (${filter.status.map((_, i) => `@s${i}`).join(", ")})`);
         filter.status.forEach((s, i) => (params[`s${i}`] = s));
       }
-      if (filter.runId) { where.push("run_id = @runId"); params.runId = filter.runId; }
-      if (filter.invoiceId) { where.push("invoice_id = @invoiceId"); params.invoiceId = filter.invoiceId; }
-      const sql = `SELECT * FROM proposals ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC`;
+      if (filter.runId) { where.push("p.run_id = @runId"); params.runId = filter.runId; }
+      if (filter.invoiceId) { where.push("p.invoice_id = @invoiceId"); params.invoiceId = filter.invoiceId; }
+      const sql = `${PROPOSAL_SELECT} ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY p.created_at DESC`;
       return (db.prepare(sql).all(params) as Row[]).map(toProposal);
+    },
+
+    async resolveProposal(input) {
+      return db.transaction(() => {
+        const r = getProposalRow.get(input.proposalId) as Row | undefined;
+        if (!r) throw new Error(`proposal ${input.proposalId} not found`);
+        if (r.status !== "blocked" && r.status !== "escalated") throw new Error(`proposal is ${r.status as string}; only blocked or escalated items can be resolved`);
+        if (r.r_action) throw new Error("proposal is already resolved");
+        db.prepare("INSERT INTO resolutions (id, proposal_id, action, note, actor, at) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(id("res"), input.proposalId, input.action, input.note, input.actor, now());
+        writeAudit({ actor: input.actor, event: `proposal.${input.action}`, entityType: "proposal", entityId: input.proposalId,
+          data: { invoiceId: r.invoice_id, status: r.status, note: input.note } });
+        return toProposal(getProposalRow.get(input.proposalId) as Row);
+      }).immediate();
+    },
+
+    async listApprovals(proposalId) {
+      return (db.prepare("SELECT * FROM approvals WHERE proposal_id = ? ORDER BY created_at DESC").all(proposalId) as Row[]).map(toApproval);
     },
 
     async createApproval(input) {

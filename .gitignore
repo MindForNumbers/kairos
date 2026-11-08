@@ -4,3 +4,7 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 data/
+
+# Any env file or editor backup of one (e.g. .env.save); only the example is tracked
+.env*
+!.env.example
