@@ -82,3 +82,11 @@ code { font-size: .85em; background: var(--bg); border: 1px solid var(--border);
 .footer-note { margin-top: 24px; font-size: .85rem; }
 @media (max-width: 640px) { .amount { text-align: left; } .nav { gap: 8px; } }
 .pill.stale { color: var(--danger); border-color: var(--danger); }
+.controls-wrap { margin-top: 14px; }
+.execution { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: .88rem; }
+.execution-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.steps { margin: 0 0 8px; padding-left: 20px; }
+.steps li { margin: 2px 0; }
+.ok-step strong { color: var(--ok); }
+.fail-step strong { color: var(--danger); }
+.request pre { white-space: pre-wrap; word-break: break-word; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: .8rem; }

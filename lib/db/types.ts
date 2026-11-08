@@ -139,6 +139,8 @@ export interface Store {
 
   // approvals (single-use tokens)
   listApprovals(proposalId: string): Promise<Approval[]>;
+  /** Read-only lookup (no claim). */
+  getApprovalByTokenHash(tokenHash: string): Promise<Approval | null>;
   createApproval(input: { proposalId: string; tokenHash: string; draftHash: string; approvedBy: string; ttlMs: number }): Promise<Approval>;
   /** Atomically lock an unexpired, unused token so two executors can't both act on it. */
   claimApproval(tokenHash: string, now?: Date): Promise<ClaimResult>;

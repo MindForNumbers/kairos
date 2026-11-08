@@ -311,6 +311,11 @@ export function openSqliteStore(path: string): Store {
       }).immediate();
     },
 
+    async getApprovalByTokenHash(tokenHash) {
+      const r = db.prepare("SELECT * FROM approvals WHERE token_hash = ?").get(tokenHash) as Row | undefined;
+      return r ? toApproval(r) : null;
+    },
+
     async listApprovals(proposalId) {
       return (db.prepare("SELECT * FROM approvals WHERE proposal_id = ? ORDER BY created_at DESC").all(proposalId) as Row[]).map(toApproval);
     },

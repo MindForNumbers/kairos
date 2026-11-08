@@ -8,3 +8,6 @@ data/
 # Any env file or editor backup of one (e.g. .env.save); only the example is tracked
 .env*
 !.env.example
+
+# Emergency stop: if this file exists, nothing is sent
+/KILL

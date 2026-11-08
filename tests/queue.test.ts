@@ -69,23 +69,26 @@ test("approve: mints a token bound to the draft hash; only the hash is stored", 
   assert.ok(!JSON.stringify(events).includes(token), "raw token never reaches the audit log");
 });
 
-test("approve: no second live token; re-approve only after expiry; escalations and blocked can't be approved", async () => {
-  const { passed, blocked, escalated } = await seedQueue();
-  await approveProposal(passed.id, "user:admin");
+test("approve: no second approval while the executor holds a claim; escalations and blocked can't be approved", async () => {
+  const { store, passed, blocked, escalated } = await seedQueue();
+  const first = await approveProposal(passed.id, "user:admin");
+  // An unclaimed approval has no holder (one-click: the token never left the server), so it doesn't block.
+  const second = await approveProposal(passed.id, "user:admin");
+  assert.ok(second.token);
+  // A claimed one does: a send is in flight or its outcome is unknown.
+  assert.equal((await store.claimApproval(hashToken(first.token))).ok, true);
   await assert.rejects(approveProposal(passed.id, "user:admin"), (e: QueueError) => e.code === "ALREADY_APPROVED");
-  setClockForTesting(new Date(Date.parse("2026-11-07T17:00:00Z") + APPROVAL_TTL_MS + 1000));
-  const again = await approveProposal(passed.id, "user:admin");
-  assert.ok(again.token);
   await assert.rejects(approveProposal(blocked.id, "user:admin"), (e: QueueError) => e.code === "NOT_APPROVABLE");
   await assert.rejects(approveProposal(escalated.id, "user:admin"), (e: QueueError) => e.code === "NOT_APPROVABLE");
   await assert.rejects(approveProposal("prp_missing", "user:admin"), (e: QueueError) => e.status === 404);
 });
 
-test("reject: blocked while a live approval exists; allowed after it expires", async () => {
+test("reject: refused while a send is in flight; allowed once the claim is released", async () => {
   const { store, passed } = await seedQueue();
-  await approveProposal(passed.id, "user:admin");
+  const { token, approval } = await approveProposal(passed.id, "user:admin");
+  await store.claimApproval(hashToken(token));
   await assert.rejects(rejectProposal(passed.id, "user:admin", null), (e: QueueError) => e.code === "LIVE_APPROVAL");
-  setClockForTesting(new Date(Date.parse("2026-11-07T17:00:00Z") + APPROVAL_TTL_MS + 1000));
+  await store.releaseApproval(approval.id);
   await rejectProposal(passed.id, "user:admin", "tone is off");
   const p = (await store.getProposal(passed.id))!;
   assert.equal(p.status, "rejected");

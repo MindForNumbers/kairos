@@ -52,6 +52,21 @@ const rules = [
     check: (src) => src.split("\n").every((line, i, lines) =>
       !/new Date\(\)|Date\.now\(\)/.test(line) || /real-clock/.test(line) || /real-clock/.test(lines[i - 1] ?? "")),
   },
+  {
+    name: "Only lib/executor/ calls PayPal's /remind endpoint (one attempt, limits, ledger)",
+    applies: (f) => /^(lib|app|scripts)\//.test(f) && !f.startsWith("lib/executor/") && f !== "scripts/check-boundaries.mjs" && f !== "app/invoices/[id]/InvoiceActions.tsx",
+    forbid: /\/remind\b|remindInvoice/,
+  },
+  {
+    name: "executeApproval is reached only through the approval queue (lib/queue/actions.ts)",
+    applies: (f) => /^(lib|app|scripts)\//.test(f) && !f.startsWith("lib/executor/") && f !== "lib/queue/actions.ts" && f !== "scripts/check-boundaries.mjs",
+    forbid: /\bexecuteApproval\b|setExecutorDepsForTesting/,
+  },
+  {
+    name: "The executor is code, not a model: no LLM calls in lib/executor/",
+    applies: (f) => f.startsWith("lib/executor/"),
+    forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,
+  },
 ];
 
 let failed = 0;

@@ -29,6 +29,14 @@ export default function InvoiceActions({ id, status, dueAmount }: { id: string; 
       });
       if (!res.ok) {
         const b = await res.json().catch(() => ({}));
+        // Manual reminders: limits warn, the human decides.
+        if (action === "remind" && b.error === "NEEDS_CONFIRMATION") {
+          if (confirm(`Send anyway?\n\n• ${b.warnings.join("\n• ")}`)) {
+            setBusy(null);
+            return call(action, post({ ...JSON.parse(String(init.body ?? "{}")), confirm: true }));
+          }
+          return;
+        }
         throw new Error(`${b.error ?? res.status}: ${b.message ?? ""}${b.debug_id ? `\ndebug_id: ${b.debug_id}` : ""}`);
       }
       if (action === "delete") {

@@ -1,8 +1,9 @@
 import "server-only";
-import { createHash, randomBytes } from "node:crypto";
-import { nowIso } from "@/lib/clock";
+import { randomBytes } from "node:crypto";
 import { getStore, hashDraft, type Approval, type Proposal, type ResolutionAction } from "@/lib/db";
 import { RULES_VERSION } from "@/lib/agent/rules-version";
+import { executeApproval, type ExecutionResult } from "@/lib/executor/execute";
+import { hashToken } from "@/lib/executor/token";
 
 /**
  * Human decisions on proposals. This is NOT agent code: lib/agent/ may never import it
@@ -22,19 +23,31 @@ export function isStale(p: Pick<Proposal, "rulesVersion">): boolean {
   return p.rulesVersion !== RULES_VERSION;
 }
 
-/** sha256 of the bearer token. Only this is stored; the executor hashes what it receives the same way. */
-export function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
+export { hashToken };
 
-/** An approval that can still be used (or is mid-use). Blocks minting a second one. */
-export function liveApproval(approvals: Approval[], at = nowIso()): Approval | undefined {
-  return approvals.find((a) => !a.usedAt && (a.claimedAt || a.expiresAt > at));
+/**
+ * An approval the executor is holding: claimed and not burned. That is either a send in
+ * progress or one whose outcome is unknown. Blocks a second approval and a reject.
+ * (With one-click approve the raw token never leaves the server, so an unclaimed approval
+ * has no holder and doesn't count.)
+ */
+export function liveApproval(approvals: Approval[]): Approval | undefined {
+  return approvals.find((a) => !a.usedAt && a.claimedAt);
 }
 
 /**
- * Approve = mint a single-use token bound to the draft hash, valid APPROVAL_TTL_MS.
- * The raw token is returned exactly once and never stored.
+ * One click: mint a single-use token bound to the draft hash and hand it straight to the
+ * executor in the same request. The raw token exists only in this function's memory.
+ */
+export async function approveAndExecute(proposalId: string, actor: string): Promise<{ approval: Approval; execution: ExecutionResult }> {
+  const { token, approval } = await approveProposal(proposalId, actor);
+  const execution = await executeApproval(token);
+  return { approval, execution };
+}
+
+/**
+ * Mint a single-use token bound to the draft hash, valid APPROVAL_TTL_MS. Only its hash is
+ * stored. Callers outside this module should use approveAndExecute().
  */
 export async function approveProposal(proposalId: string, actor: string): Promise<{ token: string; approval: Approval }> {
   const store = getStore();
@@ -57,8 +70,8 @@ export async function approveProposal(proposalId: string, actor: string): Promis
       throw new QueueError(409, "CONFLICT", "Proposal changed while approving; reload");
     }
   } else if (p.status === "approved") {
-    // Re-approval is allowed only after the previous token expired unused.
-    if (liveApproval(await store.listApprovals(p.id))) throw new QueueError(409, "ALREADY_APPROVED", "This draft already has a live approval");
+    // Only reachable after an interrupted request; refused while the executor holds a token.
+    if (liveApproval(await store.listApprovals(p.id))) throw new QueueError(409, "ALREADY_APPROVED", "A send for this draft is in progress or its outcome is unknown");
   } else {
     throw new QueueError(409, "NOT_APPROVABLE", `Proposal is ${p.status}`);
   }
@@ -76,7 +89,7 @@ export async function rejectProposal(proposalId: string, actor: string, note: st
   const p = await store.getProposal(proposalId);
   if (!p) throw new QueueError(404, "NOT_FOUND", "Proposal not found");
   if (p.status === "approved" && liveApproval(await store.listApprovals(p.id))) {
-    throw new QueueError(409, "LIVE_APPROVAL", "This draft has a live approval; wait for it to expire or be used");
+    throw new QueueError(409, "LIVE_APPROVAL", "A send for this draft is in progress or its outcome is unknown");
   }
   if (!(await store.updateProposalStatus(p.id, { status: "rejected", reason: note ? `Rejected: ${note}` : "Rejected by reviewer" }, ["passed", "approved"]))) {
     throw new QueueError(409, "NOT_REJECTABLE", `Proposal is ${p.status}`);

@@ -78,7 +78,20 @@ type RequestOptions = {
   /** Reuse a caller-supplied key so retried/double-submitted POSTs are deduplicated by PayPal. */
   requestId?: string;
   query?: Record<string, string | number | boolean | undefined>;
+  /**
+   * Exactly one HTTP attempt: no 429/5xx retries and no 401 token-refresh retry.
+   * Required for non-idempotent sends (the Invoicing API ignores PayPal-Request-Id),
+   * where a retry after an ambiguous failure could email the customer twice.
+   */
+  noRetry?: boolean;
+  /** Abort the request after this many ms (the error is a TimeoutError). */
+  timeoutMs?: number;
 };
+
+/** Fetch (or reuse) the OAuth token now, so a later single-shot send can't fail on auth mid-flight. */
+export async function ensureAccessToken(): Promise<void> {
+  await getAccessToken();
+}
 
 const MAX_ATTEMPTS = 4;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -107,6 +120,7 @@ export async function paypalRequest<T = unknown>(path: string, opts: RequestOpti
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       cache: "no-store",
+      signal: opts.timeoutMs ? AbortSignal.timeout(opts.timeoutMs) : undefined,
     });
 
     if (res.ok) {
@@ -116,13 +130,14 @@ export async function paypalRequest<T = unknown>(path: string, opts: RequestOpti
     }
 
     // Token revoked/expired early: drop cache and retry once.
-    if (res.status === 401 && attempt === 1) {
+    if (res.status === 401) cached = null;
+    if (res.status === 401 && attempt === 1 && !opts.noRetry) {
       cached = null;
       continue;
     }
 
     const retryable = res.status === 429 || res.status >= 500;
-    if (retryable && attempt < MAX_ATTEMPTS) {
+    if (retryable && attempt < MAX_ATTEMPTS && !opts.noRetry) {
       const retryAfter = Number(res.headers.get("retry-after"));
       const backoff = Number.isFinite(retryAfter) && retryAfter > 0
         ? retryAfter * 1000

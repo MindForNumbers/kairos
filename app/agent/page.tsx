@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requirePageSession } from "@/lib/auth-server";
-import { daysBetween, isOverridden, localDate, nowIso, startOfLocalDay } from "@/lib/clock";
+import { daysBetween, isOverridden, localDate, localMinuteOfDay, startOfLocalDay } from "@/lib/clock";
+import { dailySendCap, executorEnabled, inQuietHours, killActive, quietHours } from "@/lib/executor/limits";
 import { getStore, type Proposal, type Run } from "@/lib/db";
 import type { Issue } from "@/lib/agent/checks";
 import { CHECK_LABELS } from "@/lib/agent/checks";
@@ -47,7 +48,12 @@ export default async function AgentPage() {
   };
 
   const today = localDate();
-  const now = nowIso();
+  const enabled = executorEnabled();
+  const kill = killActive();
+  const sendCap = dailySendCap();
+  const quiet = quietHours();
+  const quietNow = inQuietHours(localMinuteOfDay(), quiet);
+  const sentToday = await store.countSendsSince(startOfLocalDay());
   const lastRun = runs[0];
   const report = lastRun?.report as RunReport | null;
   const caps = costCaps();
@@ -70,13 +76,20 @@ export default async function AgentPage() {
         <div><label>Spent today</label><div>${spentToday.toFixed(4)}</div><div className="muted">cap ${caps.dailyUsd.toFixed(2)} per day</div></div>
         <div><label>Models</label><div>{report?.models ? `${report.models.drafter.join(", ")} → ${report.models.critic.join(", ")}` : "—"}</div><div className="muted">drafter → critic</div></div>
         <div><label>Rules version</label><div data-rules-version={RULES_VERSION}>{RULES_VERSION}</div><div className="muted">drafts from other versions are stale</div></div>
+        <div>
+          <label>Sending</label>
+          <div>{kill ? <span className="pill stale">KILL: halted</span> : enabled ? <span className="pill ok">Live</span> : <span className="pill warn">Dry run</span>}</div>
+          <div className="muted">{sentToday} of {sendCap} sent today · quiet {quiet.label}{quietNow ? " (now)" : ""}</div>
+        </div>
       </section>
 
       <h2>Approval queue <span className="count">{queueCards.length}</span></h2>
-      <p className="muted section-help">Drafts that passed both the critic and the code checks. Approving mints a single-use token bound to this exact draft, valid for 15 minutes. Nothing is sent from this page yet (the executor is Stage 6).</p>
+      <p className="muted section-help">
+        Drafts that passed both the critic and the code checks. {enabled ? "Approve & send" : "Approve (dry run)"} mints a single-use token bound to this exact draft and hands it straight to the executor, which re-fetches the invoice and checks every limit before {enabled ? "sending one reminder through PayPal" : "stopping short of PayPal (dry run: set KAIROS_EXECUTOR_ENABLED=1 to send)"}.
+      </p>
       {queueCards.length === 0 && <div className="card muted">Nothing waiting for approval.</div>}
       {queueCards.map(({ p, rec, history, approvals }) => {
-        const live = liveApproval(approvals, now);
+        const live = liveApproval(approvals);
         return (
           <article key={p.id} className="card proposal">
             <InvoiceHeader p={p} rec={rec} today={today} />
@@ -85,9 +98,8 @@ export default async function AgentPage() {
             {history.length > 0 && <History history={history} />}
             <ApproveControls
               proposalId={p.id}
-              status={p.status}
-              liveExpiresAt={live?.expiresAt ?? null}
-              hadExpiredApproval={p.status === "approved" && !live}
+              inFlight={!!live}
+              live={enabled}
               stale={isStale(p) ? { made: p.rulesVersion, current: RULES_VERSION } : null}
             />
           </article>

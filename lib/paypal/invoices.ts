@@ -150,13 +150,9 @@ export function sendInvoice(id: string, opts: { subject?: string; note?: string 
   });
 }
 
-export function remindInvoice(id: string, opts: { subject?: string; note?: string } = {}, requestId?: string) {
-  return paypalRequest(`${BASE}/${encodeURIComponent(id)}/remind`, {
-    method: "POST",
-    requestId,
-    body: { subject: opts.subject, note: opts.note, send_to_recipient: true, send_to_invoicer: false },
-  });
-}
+// Reminders are NOT sent from here. The only code that calls the reminder endpoint is lib/executor/
+// (execute.ts for agent drafts, manual.ts for the Remind button): one attempt, no retry,
+// limits checked, send ledger written. scripts/check-boundaries.mjs enforces this.
 
 export function cancelInvoice(id: string, opts: { subject?: string; note?: string } = {}, requestId?: string) {
   return paypalRequest(`${BASE}/${encodeURIComponent(id)}/cancel`, {
