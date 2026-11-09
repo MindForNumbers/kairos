@@ -11,8 +11,8 @@ import type { CallMeta, SpendGuard } from "@/lib/llm/client";
  */
 
 export class CostCapError extends Error {
-  constructor(public cap: "run" | "daily", public spentUsd: number, public capUsd: number, public nextMaxUsd: number, public purpose: string) {
-    super(`${cap === "run" ? "Run" : "Daily"} cost cap $${capUsd.toFixed(2)} would be exceeded: spent $${spentUsd.toFixed(4)}, next ${purpose} call could cost up to $${nextMaxUsd.toFixed(4)}`);
+  constructor(public cap: "run" | "daily" | "chat_turn", public spentUsd: number, public capUsd: number, public nextMaxUsd: number, public purpose: string) {
+    super(`${cap === "run" ? "Run" : cap === "chat_turn" ? "Chat message" : "Daily"} cost cap $${capUsd.toFixed(2)} would be exceeded: spent $${spentUsd.toFixed(4)}, next ${purpose} call could cost up to $${nextMaxUsd.toFixed(4)}`);
     this.name = "CostCapError";
   }
 }
@@ -26,7 +26,11 @@ function capFromEnv(name: string, fallback: number): number {
 }
 
 export function costCaps() {
-  return { runUsd: capFromEnv("KAIROS_RUN_COST_CAP", 0.5), dailyUsd: capFromEnv("KAIROS_DAILY_COST_CAP", 5) };
+  return {
+    runUsd: capFromEnv("KAIROS_RUN_COST_CAP", 0.5),
+    dailyUsd: capFromEnv("KAIROS_DAILY_COST_CAP", 5),
+    chatTurnUsd: capFromEnv("KAIROS_CHAT_TURN_COST_CAP", 0.05),
+  };
 }
 
 export type Budget = SpendGuard & { spentUsd(): number };
@@ -56,6 +60,38 @@ export function createBudget(runId: string | null): Budget {
       spent += meta.costUsd;
       await store.recordModelCall({
         runId, purpose: meta.purpose, model: meta.model, requestId: meta.requestId,
+        inputTokens: meta.inputTokens, outputTokens: meta.outputTokens,
+        cacheReadTokens: meta.cacheReadTokens, cacheWriteTokens: meta.cacheWriteTokens, costUsd: meta.costUsd,
+      });
+    },
+  };
+}
+
+/**
+ * One budget per chat message (the whole tool loop): KAIROS_CHAT_TURN_COST_CAP per message,
+ * plus the shared daily cap. Calls are recorded in model_calls with purpose "chat".
+ */
+export function createChatTurnBudget(sessionId: string): Budget {
+  const store = getStore();
+  const caps = costCaps();
+  let spent = 0;
+  return {
+    spentUsd: () => spent,
+    async beforeCall(model, maxCostUsd, purpose) {
+      const daily = await store.modelSpendSince(startOfLocalDay());
+      let err: CostCapError | null = null;
+      if (spent + maxCostUsd > caps.chatTurnUsd) err = new CostCapError("chat_turn", spent, caps.chatTurnUsd, maxCostUsd, purpose);
+      else if (daily + maxCostUsd > caps.dailyUsd) err = new CostCapError("daily", daily, caps.dailyUsd, maxCostUsd, purpose);
+      if (err) {
+        await store.audit({ actor: "system", event: "budget.halt", entityType: "chat_session", entityId: sessionId,
+          data: { cap: err.cap, capUsd: err.capUsd, spentUsd: err.spentUsd, nextMaxUsd: maxCostUsd, model, purpose } });
+        throw err;
+      }
+    },
+    async afterCall(meta: CallMeta) {
+      spent += meta.costUsd;
+      await store.recordModelCall({
+        runId: null, purpose: meta.purpose, model: meta.model, requestId: meta.requestId,
         inputTokens: meta.inputTokens, outputTokens: meta.outputTokens,
         cacheReadTokens: meta.cacheReadTokens, cacheWriteTokens: meta.cacheWriteTokens, costUsd: meta.costUsd,
       });

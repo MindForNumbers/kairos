@@ -63,6 +63,11 @@ const rules = [
     forbid: /\bexecuteApproval\b|setExecutorDepsForTesting/,
   },
   {
+    name: "The chat is read-only: no queue/executor, no direct PayPal client, no HTTP, no write-side store calls (it may only request drafts via runAgent)",
+    applies: (f) => f.startsWith("lib/chat/") || f.startsWith("app/api/chat/"),
+    forbid: /lib\/(queue|executor)\b|from\s+["']@\/lib\/paypal\/|\bfetch\(|["'`]\/api\/|\.(createApproval|claimApproval|releaseApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|finishRun)\(|\b(approveProposal|approveAndExecute|rejectProposal|executeApproval|sendManualReminder|triggerRun|setPaypalReadsForTesting)\b/,
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,

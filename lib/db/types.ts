@@ -116,6 +116,9 @@ export type ModelCall = {
   costUsd: number;
 };
 
+export type ChatMessageKind = "user_text" | "assistant" | "tool_results";
+export type ChatMessage = { id: number; at: string; role: "user" | "assistant"; kind: ChatMessageKind; content: unknown };
+
 export type ClaimResult =
   | { ok: true; approval: Approval }
   | { ok: false; reason: "not_found" | "expired" | "already_used" | "in_progress" };
@@ -159,6 +162,12 @@ export interface Store {
   recordModelCall(call: Omit<ModelCall, "id" | "at">): Promise<void>;
   modelSpendSince(since: Date): Promise<number>;
   modelSpendForRun(runId: string): Promise<{ totalUsd: number; byPurpose: Record<string, { calls: number; costUsd: number; inputTokens: number; outputTokens: number }> }>;
+
+  // chat transcript (append-only; the server owns it, the browser only sends new text)
+  createChatSession(): Promise<{ id: string; createdAt: string }>;
+  getChatSession(id: string): Promise<{ id: string; createdAt: string } | null>;
+  appendChatMessage(m: { sessionId: string; role: "user" | "assistant"; kind: ChatMessageKind; content: unknown }): Promise<number>;
+  listChatMessages(sessionId: string): Promise<ChatMessage[]>;
 
   // audit log
   audit(event: Omit<AuditEvent, "id" | "at">): Promise<void>;

@@ -2,38 +2,38 @@ import "server-only";
 import { nowMs } from "@/lib/clock";
 import { getStore } from "@/lib/db";
 import { runAgent, type RunReport } from "@/lib/agent/pipeline";
+import { RunBusyError, withRunLock } from "@/lib/agent/run-guard";
 import { QueueError } from "./actions";
 
 /**
  * "Run agent" from the Approvals page. A human decision, so it lives with the queue, not
- * the agent. Guards: one run at a time; at least MIN_GAP_MS between starts (protects the
- * hosted demo from click-spam); spend caps apply inside runAgent() as usual.
+ * the agent. Guards: one run at a time (shared with chat requests); at least MIN_GAP_MS
+ * between full runs (protects the hosted demo from click-spam); spend caps apply inside
+ * runAgent() as usual.
  */
 
 export const MIN_GAP_MS = 60_000;
 /** A "running" run older than this is treated as crashed, not as in progress. */
 const STALE_RUN_MS = 10 * 60_000;
 
-// Taken synchronously, before any await, so two simultaneous clicks can't both pass the checks.
-let busy = false;
-
 export async function triggerRun(actor: string, runner: () => Promise<RunReport> = () => runAgent()): Promise<RunReport> {
-  if (busy) throw new QueueError(409, "RUN_IN_PROGRESS", "An agent run is already in progress");
-  busy = true;
   try {
-    const store = getStore();
-    const [last] = await store.listRuns(1);
-    if (last) {
-      const age = nowMs() - Date.parse(last.startedAt);
-      if (last.status === "running" && age < STALE_RUN_MS) throw new QueueError(409, "RUN_IN_PROGRESS", "An agent run is already in progress");
-      if (age < MIN_GAP_MS) {
-        throw new QueueError(429, "TOO_SOON", `The last run started ${Math.round(age / 1000)}s ago; wait ${Math.ceil((MIN_GAP_MS - age) / 1000)}s`);
+    return await withRunLock(async () => {
+      const store = getStore();
+      const [last] = await store.listRuns(1);
+      if (last) {
+        const age = nowMs() - Date.parse(last.startedAt);
+        if (last.status === "running" && age < STALE_RUN_MS) throw new RunBusyError();
+        if (age < MIN_GAP_MS) {
+          throw new QueueError(429, "TOO_SOON", `The last run started ${Math.round(age / 1000)}s ago; wait ${Math.ceil((MIN_GAP_MS - age) / 1000)}s`);
+        }
       }
-    }
-    await store.audit({ actor, event: "run.requested", entityType: null, entityId: null, data: { source: "approvals_page" } });
-    return await runner();
-  } finally {
-    busy = false;
+      await store.audit({ actor, event: "run.requested", entityType: null, entityId: null, data: { source: "approvals_page" } });
+      return runner();
+    });
+  } catch (err) {
+    if (err instanceof RunBusyError) throw new QueueError(409, "RUN_IN_PROGRESS", err.message);
+    throw err;
   }
 }
 

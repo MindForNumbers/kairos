@@ -22,6 +22,8 @@ export type PipelineHooks = {
   afterDraft?: (round: number, batch: DraftBatch, records: InvoiceRecord[]) => DraftBatch;
   /** Test seam: replace the PayPal sweep with a fixture. */
   sweep?: () => Promise<SweepResult>;
+  /** Draft only for these invoices (chat requests). The usual sweep rules still apply to each. */
+  only?: string[];
 };
 
 export type TraceEntry = {
@@ -56,7 +58,7 @@ export type RunReport = {
   models: { drafter: string[]; critic: string[] };
   cost: { totalUsd: number; byPurpose: Record<string, { calls: number; costUsd: number; inputTokens: number; outputTokens: number }>; caps: { runUsd: number; dailyUsd: number } };
   /** Set when a spend cap stopped the run. Unreviewed drafts were blocked. */
-  halted: { cap: "run" | "daily"; message: string } | null;
+  halted: { cap: "run" | "daily" | "chat_turn"; message: string } | null;
   /** Rules fingerprint every proposal in this run was stamped with. */
   rulesVersion: string;
 };
@@ -76,7 +78,7 @@ function knownInvoices(s: SweepResult): KnownInvoice[] {
 
 export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
   const store = getStore();
-  const s = await (hooks.sweep ?? sweep)();
+  const s = await (hooks.sweep ?? (() => sweep({ only: hooks.only })))();
   const run = await store.createRun(s);
   const budget = createBudget(run.id);
 

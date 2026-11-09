@@ -126,11 +126,20 @@ export async function holdingProposal(invoiceId: string): Promise<{ proposal: Pr
   return { proposal: held[0], reason: NEEDS_HUMAN.includes(held[0].status) ? "needs_human" : "in_queue" };
 }
 
-export async function sweep(): Promise<SweepResult> {
+export type SweepOptions = {
+  /** Restrict to these invoice IDs (a chat-requested draft). Same rules apply to each. */
+  only?: string[];
+  /** false = a read-only preview (the chat's "what's overdue"): no audit row. Default true. */
+  audit?: boolean;
+};
+
+export async function sweep(opts: SweepOptions = {}): Promise<SweepResult> {
   const store = getStore();
   const asOf = now();
   const today = localDate(asOf);
-  const { invoices, truncated } = await listAllInvoices();
+  const listed = await listAllInvoices();
+  const truncated = listed.truncated;
+  const invoices = opts.only ? listed.invoices.filter((i) => opts.only!.includes(i.id)) : listed.invoices;
 
   const open = invoices.filter((inv) => CHASEABLE.has(inv.status) && dueDateOf(inv));
   const overdueSummaries = open.filter((inv) => daysBetween(dueDateOf(inv)!, today) > 0);
@@ -181,6 +190,7 @@ export async function sweep(): Promise<SweepResult> {
     truncated,
   };
 
+  if (opts.audit === false) return result;
   await store.audit({
     actor: "sweep",
     event: "sweep.completed",
@@ -194,7 +204,11 @@ export async function sweep(): Promise<SweepResult> {
       excluded: result.excluded.map((e) => ({ id: e.invoiceId, reason: e.reason })),
       flagged: eligible.filter((r) => r.flags.length).map((r) => ({ id: r.invoiceId, flags: r.flags })),
       truncated,
+      only: opts.only ?? null,
     },
   });
   return result;
 }
+
+/** Re-exported for the chat tools (same grace period the sweep enforces). */
+export const GRACE_DAYS_EXPORT = GRACE_DAYS;

@@ -162,3 +162,86 @@ export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S
   }
   return { ok: true, data: checked.data, meta };
 }
+
+// ---- Tool-use conversation calls (the Kairos chat) ---------------------------------------
+
+/** The chat model (KAIROS_CHAT_MODEL, default Haiku 5.5). */
+export function chatModel(): string {
+  return process.env.KAIROS_CHAT_MODEL?.trim() || "claude-haiku-5-5";
+}
+
+export type ChatRequest = {
+  purpose: string;
+  model: string;
+  system: string;
+  messages: Anthropic.MessageParam[];
+  tools: Anthropic.Tool[];
+  maxTokens: number;
+  effort: Effort;
+};
+export type ChatResponse = {
+  model: string;
+  requestId: string | null;
+  stopReason: string | null;
+  refusalCategory: string | null;
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number };
+  /** Every content block exactly as returned (thinking blocks must be replayed unchanged). */
+  content: Anthropic.ContentBlock[];
+};
+export type ChatTransport = (req: ChatRequest) => Promise<ChatResponse>;
+
+const anthropicChatTransport: ChatTransport = async (req) => {
+  const { data: response, request_id } = await getClient()
+    .messages.create({
+      model: req.model,
+      max_tokens: req.maxTokens,
+      system: req.system,
+      messages: req.messages,
+      tools: req.tools,
+      tool_choice: { type: "auto" },
+      output_config: { effort: req.effort },
+    })
+    .withResponse();
+  return {
+    model: response.model,
+    requestId: request_id ?? null,
+    stopReason: response.stop_reason,
+    refusalCategory: response.stop_reason === "refusal" ? (response.stop_details?.category ?? null) : null,
+    usage: {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+    },
+    content: response.content,
+  };
+};
+
+let chatTransport: ChatTransport = anthropicChatTransport;
+
+/** Tests only: route chat calls to a stub (null restores the real API). */
+export function setChatTransportForTesting(t: ChatTransport | null): void {
+  chatTransport = t ?? anthropicChatTransport;
+}
+
+/** One model call in a tool loop. Same pricing, spend guard and metadata as structuredCall. */
+export async function chatCall(req: ChatRequest & { budget?: SpendGuard }): Promise<{ response: ChatResponse; meta: CallMeta }> {
+  assertPriced(req.model);
+  const promptChars = req.system.length + JSON.stringify(req.messages).length + JSON.stringify(req.tools).length;
+  await req.budget?.beforeCall(req.model, maxCostOf(req.model, promptChars, req.maxTokens), req.purpose);
+  const started = Date.now(); // real-clock: measures latency
+  const { budget: _b, ...transportReq } = req;
+  const response = await chatTransport(transportReq);
+  const meta: CallMeta = {
+    purpose: req.purpose,
+    model: response.model,
+    requestId: response.requestId,
+    stopReason: response.stopReason,
+    ...response.usage,
+    costUsd: costOf(response.model, response.usage),
+    promptHash: createHash("sha256").update(req.system).update("\0").update(JSON.stringify(req.messages)).digest("hex"),
+    durationMs: Date.now() - started, // real-clock
+  };
+  await req.budget?.afterCall(meta);
+  return { response, meta };
+}

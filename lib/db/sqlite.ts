@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { now as clockNow, nowIso } from "../clock";
 import { hashDraft } from "./draft-hash";
 import type {
-  Approval, AuditEvent, ClaimResult, LedgerEntry, Proposal, ProposalStatus, Run, Store,
+  Approval, AuditEvent, ChatMessage, ClaimResult, LedgerEntry, Proposal, ProposalStatus, Run, Store,
 } from "./types";
 
 // Each entry runs once, in order; PRAGMA user_version records progress.
@@ -156,6 +156,27 @@ const MIGRATIONS: string[] = [
     OR NEW.draft_hash IS NOT OLD.draft_hash OR NEW.created_at IS NOT OLD.created_at
     OR NEW.rules_version IS NOT OLD.rules_version
   BEGIN SELECT RAISE(ABORT, 'proposal content is immutable'); END;
+  `,
+  `
+  CREATE TABLE chat_sessions (
+    id         TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE chat_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES chat_sessions(id),
+    at         TEXT NOT NULL,
+    role       TEXT NOT NULL CHECK (role IN ('user','assistant')),
+    kind       TEXT NOT NULL CHECK (kind IN ('user_text','assistant','tool_results')),
+    content    TEXT NOT NULL
+  );
+  CREATE INDEX chat_messages_session ON chat_messages(session_id, id);
+  CREATE TRIGGER chat_sessions_no_delete BEFORE DELETE ON chat_sessions
+  BEGIN SELECT RAISE(ABORT, 'chat_sessions are append-only'); END;
+  CREATE TRIGGER chat_messages_no_update BEFORE UPDATE ON chat_messages
+  BEGIN SELECT RAISE(ABORT, 'chat_messages are append-only'); END;
+  CREATE TRIGGER chat_messages_no_delete BEFORE DELETE ON chat_messages
+  BEGIN SELECT RAISE(ABORT, 'chat_messages are append-only'); END;
   `,
 ];
 
@@ -413,6 +434,28 @@ export function openSqliteStore(path: string): Store {
         FROM model_calls WHERE run_id = ? GROUP BY purpose`).all(runId) as { purpose: string; calls: number; cost: number; i: number; o: number }[];
       const byPurpose = Object.fromEntries(rows.map((r) => [r.purpose, { calls: r.calls, costUsd: r.cost, inputTokens: r.i, outputTokens: r.o }]));
       return { totalUsd: rows.reduce((s, r) => s + r.cost, 0), byPurpose };
+    },
+
+    async createChatSession() {
+      const s = { id: id("chat"), createdAt: now() };
+      db.prepare("INSERT INTO chat_sessions (id, created_at) VALUES (?, ?)").run(s.id, s.createdAt);
+      return s;
+    },
+
+    async getChatSession(sid) {
+      const r = db.prepare("SELECT id, created_at FROM chat_sessions WHERE id = ?").get(sid) as Row | undefined;
+      return r ? { id: r.id as string, createdAt: r.created_at as string } : null;
+    },
+
+    async appendChatMessage(m) {
+      return Number(db.prepare("INSERT INTO chat_messages (session_id, at, role, kind, content) VALUES (?, ?, ?, ?, ?)")
+        .run(m.sessionId, now(), m.role, m.kind, JSON.stringify(m.content)).lastInsertRowid);
+    },
+
+    async listChatMessages(sid) {
+      return (db.prepare("SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id").all(sid) as Row[]).map((r) => ({
+        id: r.id as number, at: r.at as string, role: r.role as "user" | "assistant", kind: r.kind as ChatMessage["kind"], content: unjson(r.content as string),
+      }));
     },
 
     async audit(e) {
