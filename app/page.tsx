@@ -1,3 +1,4 @@
+import WithAssistant from "./WithAssistant";
 import Link from "next/link";
 import { requirePageSession } from "@/lib/auth-server";
 import { loadDashboard, type Dashboard } from "@/lib/dashboard";
@@ -25,6 +26,7 @@ export default async function HomePage() {
   }
 
   return (
+    <WithAssistant>
     <div className="home">
       <div className="page-head">
         <div>
@@ -92,5 +94,6 @@ export default async function HomePage() {
         {d.truncated && <p className="muted">Totals cover the most recent 1,000 invoices.</p>}
       </section>
     </div>
+    </WithAssistant>
   );
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { daysBetween, localDate, now, nowMs, timezone } from "@/lib/clock";
 import { getStore, type Proposal, type ProposalStatus } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "./paypal-read";
-import { GRACE_DAYS } from "./policy";
+import { ESCALATE_AFTER_DAYS, GRACE_DAYS } from "./policy";
 import { cleanUntrusted, flagUntrusted } from "./untrusted";
 
 /**
@@ -11,6 +11,7 @@ import { cleanUntrusted, flagUntrusted } from "./untrusted";
  * write is an audit row.
  */
 
+/** Reminders drafted per run. Policy escalations (over 60 days) don't count toward it. */
 export const RUN_SIZE = 5;
 export const REMINDER_COOLDOWN_DAYS = 7;
 
@@ -126,6 +127,18 @@ export async function holdingProposal(invoiceId: string): Promise<{ proposal: Pr
   return { proposal: held[0], reason: NEEDS_HUMAN.includes(held[0].status) ? "needs_human" : "in_queue" };
 }
 
+/**
+ * This run's set: every invoice policy will escalate (no draft, so no drafting cost), plus the
+ * RUN_SIZE most urgent invoices that will be drafted. The rest wait for a later run.
+ */
+export function chooseRunSet(eligible: InvoiceRecord[]): { candidates: InvoiceRecord[]; deferred: InvoiceRecord[] } {
+  const sorted = [...eligible].sort(compareUrgency);
+  const escalate = sorted.filter((r) => r.daysOverdue > ESCALATE_AFTER_DAYS);
+  const draftable = sorted.filter((r) => r.daysOverdue <= ESCALATE_AFTER_DAYS);
+  const chosen = new Set([...escalate, ...draftable.slice(0, RUN_SIZE)]);
+  return { candidates: sorted.filter((r) => chosen.has(r)), deferred: draftable.slice(RUN_SIZE) };
+}
+
 export type SweepOptions = {
   /** Restrict to these invoice IDs (a chat-requested draft). Same rules apply to each. */
   only?: string[];
@@ -177,13 +190,13 @@ export async function sweep(opts: SweepOptions = {}): Promise<SweepResult> {
     if (record.daysOverdue >= GRACE_DAYS) eligible.push(record);
   }
 
-  eligible.sort(compareUrgency);
+  const { candidates, deferred } = chooseRunSet(eligible);
   const result: SweepResult = {
     asOf: asOf.toISOString(),
     today,
     timezone: timezone(),
-    candidates: eligible.slice(0, RUN_SIZE),
-    deferred: eligible.slice(RUN_SIZE),
+    candidates,
+    deferred,
     excluded,
     openNotDue,
     counts: { listed: invoices.length, open: open.length, overdue: overdueSummaries.length },

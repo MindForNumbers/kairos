@@ -69,8 +69,22 @@ export type DraftPlan =
 export function planFor(r: InvoiceRecord): DraftPlan {
   const tone = toneFor(r.daysOverdue);
   if (!tone) {
+    // No day count in the stored reason: it would go stale. Displays add the current count.
     return { invoiceId: r.invoiceId, action: "escalate", record: r,
-      reason: `${r.daysOverdue} days overdue (over ${ESCALATE_AFTER_DAYS}): policy routes to a human, no automated reminder` };
+      reason: `More than ${ESCALATE_AFTER_DAYS} days overdue: policy routes it to a human, no automated reminder` };
   }
   return { invoiceId: r.invoiceId, action: "draft", tone, facts: requiredFacts(r), record: r };
+}
+
+/**
+ * A held item's reason with today's day count. Policy reasons we wrote ("Policy: 75 days
+ * overdue (over 60): ...", older format) get their number refreshed; newer ones get it added.
+ * Only rewrites our own "Policy:" text, never critic or drafter reasons.
+ */
+export function currentReason(reason: string | null, daysOverdueNow: number | null): string | null {
+  if (!reason || daysOverdueNow === null || !reason.startsWith("Policy:")) return reason;
+  // Older format: the stale count sits right after "Policy: ". Don't touch "More than 60 days overdue".
+  const old = /^(Policy: )\d+( days overdue\b)/;
+  if (old.test(reason)) return reason.replace(old, `$1${daysOverdueNow}$2`);
+  return `${reason} (now ${daysOverdueNow} days overdue)`;
 }

@@ -5,7 +5,7 @@ import { dailySendCap, executorEnabled, inQuietHours, killActive, quietHours } f
 import { getStore, type Proposal, type Run } from "@/lib/db";
 import type { Issue } from "@/lib/agent/checks";
 import { CHECK_LABELS } from "@/lib/agent/checks";
-import { formatAmount, formatDueDate } from "@/lib/agent/policy";
+import { currentReason, formatAmount, formatDueDate } from "@/lib/agent/policy";
 import type { InvoiceRecord, SweepResult } from "@/lib/agent/sweep";
 import type { RunReport } from "@/lib/agent/pipeline";
 import { costCaps } from "@/lib/agent/budget";
@@ -118,7 +118,7 @@ export default async function AgentPage() {
       {humanCards.map(({ p, rec, history }) => (
         <article key={p.id} className="card proposal human">
           <InvoiceHeader p={p} rec={rec} today={today} />
-          <p className="reason"><strong>{p.status === "escalated" ? "Escalated" : "Blocked"}:</strong> {p.reason}</p>
+          <p className="reason"><strong>{p.status === "escalated" ? "Escalated" : "Blocked"}:</strong> {currentReason(p.reason, rec ? Math.max(0, daysBetween(rec.dueDate, today)) : null)}</p>
           {p.kind === "reminder" && <Draft p={p} />}
           {p.kind === "reminder" && <Checks review={p.review as Review | null} />}
           {history.length > 0 && <History history={history} />}

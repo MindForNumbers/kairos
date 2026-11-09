@@ -1,3 +1,4 @@
+import WithAssistant from "../../WithAssistant";
 import { requirePageSession } from "@/lib/auth-server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,7 +26,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const txns = inv.payments?.transactions ?? [];
 
   return (
-    <>
+    <WithAssistant invoiceId={inv.id} invoiceNumber={inv.detail.invoice_number ?? null}>
       <p><Link href="/invoices">← Invoices</Link></p>
       <h1>
         Invoice {inv.detail.invoice_number ?? inv.id}{" "}
@@ -93,6 +94,6 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           <p className="muted">Payer link: <a href={payUrl} target="_blank" rel="noreferrer">{payUrl}</a></p>
         )}
       </div>
-    </>
+    </WithAssistant>
   );
 }

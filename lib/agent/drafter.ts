@@ -144,10 +144,11 @@ export function reconcile(plans: DraftPlan[], out: DraftOutput | null, failure: 
 // ---- Entry point -----------------------------------------------------------------
 
 export async function draft(records: InvoiceRecord[], opts: { feedback?: RevisionFeedback[]; only?: string[]; budget?: SpendGuard } = {}): Promise<DraftBatch> {
-  if (records.length > RUN_SIZE) throw new Error(`drafter got ${records.length} invoices; max is ${RUN_SIZE}`);
   const store = getStore();
   const plans = records.map(planFor).filter((p) => !opts.only || opts.only.includes(p.invoiceId));
   const draftable = plans.filter((p): p is Extract<DraftPlan, { action: "draft" }> => p.action === "draft");
+  // Policy escalations are free (no model call); only drafts count toward the run size.
+  if (draftable.length > RUN_SIZE) throw new Error(`drafter got ${draftable.length} invoices to draft; max is ${RUN_SIZE}`);
 
   let out: DraftOutput | null = null;
   let meta: CallMeta | null = null;

@@ -22,6 +22,14 @@ const MAX_TOKENS = 4000;
 
 export type ToolActivity = { name: string; input: unknown; ok: boolean; summary: string };
 
+/** Live events for the streaming panel. */
+export type TurnEvents = {
+  onText?: (delta: string) => void;
+  onToolStart?: (a: { id: string; name: string; summary: string }) => void;
+  onToolDone?: (a: { id: string; name: string; summary: string; ok: boolean }) => void;
+  onProposals?: (p: ProposalOutcome[]) => void;
+};
+
 export type TurnResult = {
   sessionId: string;
   /** True when the old conversation was too long and this turn started a fresh one. */
@@ -36,7 +44,7 @@ export type TurnResult = {
 type Stored =
   | { kind: "user_text"; content: { blocks: Anthropic.ContentBlockParam[]; display: string; invoiceId: string | null } }
   | { kind: "assistant"; content: { blocks: Anthropic.ContentBlock[] } }
-  | { kind: "tool_results"; content: { blocks: Anthropic.ToolResultBlockParam[]; activity: ToolActivity[] } };
+  | { kind: "tool_results"; content: { blocks: Anthropic.ToolResultBlockParam[]; activity: ToolActivity[]; outcomes?: { invoiceNumber: string | null; outcome: string }[] } };
 
 function toParams(rows: Stored[]): Anthropic.MessageParam[] {
   return rows.map((r) =>
@@ -55,14 +63,14 @@ export function formatToolResult(r: { data: unknown; untrusted?: unknown }): str
 function summarize(name: string, input: Record<string, unknown>): string {
   const ref = (input.invoice ?? input.customer_email ?? (Array.isArray(input.invoices) ? (input.invoices as string[]).join(", ") : "")) as string;
   const label: Record<string, string> = {
-    get_summary: "Checked the business summary", list_invoices: `Listed ${input.status ?? ""} invoices`, customers_owing: "Looked up who owes money",
-    get_invoice: `Looked up ${ref}`, customer_history: `Read ${ref}'s history`, reminder_history: `Read reminder history for ${ref}`,
-    get_queue: "Checked the Approvals queue", preview_overdue: "Previewed the next Kairos run", request_reminder_proposals: `Asked Kairos to draft reminders for ${ref}`,
+    get_summary: "Checked PayPal invoices", list_invoices: "Checked PayPal invoices", customers_owing: "Checked who owes money",
+    get_invoice: `Looked up ${ref}`, customer_history: `Read payment history for ${ref}`, reminder_history: `Read reminder history for ${ref}`,
+    get_queue: "Checked Approvals", preview_overdue: "Checked what's overdue", request_reminder_proposals: `Drafting reminders for ${ref}`,
   };
   return label[name] ?? name;
 }
 
-export async function chatTurn(opts: { sessionId?: string | null; text: string; invoiceId?: string | null }): Promise<TurnResult> {
+export async function chatTurn(opts: { sessionId?: string | null; text: string; invoiceId?: string | null }, events: TurnEvents = {}): Promise<TurnResult> {
   const store = getStore();
   let newSession = false;
   let session = opts.sessionId ? await store.getChatSession(opts.sessionId) : null;
@@ -102,7 +110,7 @@ export async function chatTurn(opts: { sessionId?: string | null; text: string; 
     for (let call = 0; call < MAX_CALLS; call++) {
       const { response, meta } = await chatCall({
         purpose: "chat", model: chatModel(), system: CHAT_SYSTEM, messages: toParams(history), tools: TOOL_DEFINITIONS,
-        maxTokens: MAX_TOKENS, effort: "medium", budget,
+        maxTokens: MAX_TOKENS, effort: "medium", budget, onTextDelta: events.onText,
       });
       metas.push(meta);
       const assistant: Stored = { kind: "assistant", content: { blocks: response.content } };
@@ -119,20 +127,29 @@ export async function chatTurn(opts: { sessionId?: string | null; text: string; 
       // Run the requested tools (sequentially: a draft request should see fresh state).
       const results: Anthropic.ToolResultBlockParam[] = [];
       const activity: ToolActivity[] = [];
+      const batchOutcomes: { invoiceNumber: string | null; outcome: string }[] = [];
       for (const u of uses) {
         const input = (u.input ?? {}) as Record<string, unknown>;
+        const summary = summarize(u.name, input);
+        events.onToolStart?.({ id: u.id, name: u.name, summary });
         try {
           const r = await runTool(u.name, input, ctx);
-          if (r.proposals) proposals.push(...r.proposals);
+          if (r.proposals) {
+            proposals.push(...r.proposals);
+            batchOutcomes.push(...r.proposals.map((p) => ({ invoiceNumber: p.invoiceNumber, outcome: p.outcome })));
+            events.onProposals?.(r.proposals);
+          }
           results.push({ type: "tool_result", tool_use_id: u.id, content: formatToolResult(r) });
-          activity.push({ name: u.name, input, ok: true, summary: summarize(u.name, input) });
+          activity.push({ name: u.name, input, ok: true, summary });
+          events.onToolDone?.({ id: u.id, name: u.name, summary, ok: true });
         } catch (err) {
           results.push({ type: "tool_result", tool_use_id: u.id, is_error: true, content: (err as Error).message });
-          activity.push({ name: u.name, input, ok: false, summary: `${summarize(u.name, input)} (failed)` });
+          activity.push({ name: u.name, input, ok: false, summary: `${summary} (failed)` });
+          events.onToolDone?.({ id: u.id, name: u.name, summary, ok: false });
         }
       }
       tools.push(...activity);
-      const toolMsg: Stored = { kind: "tool_results", content: { blocks: results, activity } };
+      const toolMsg: Stored = { kind: "tool_results", content: { blocks: results, activity, ...(batchOutcomes.length ? { outcomes: batchOutcomes } : {}) } };
       await store.appendChatMessage({ sessionId, role: "user", kind: "tool_results", content: toolMsg.content });
       history.push(toolMsg);
       if (text) reply = text;
@@ -159,14 +176,22 @@ export async function chatTurn(opts: { sessionId?: string | null; text: string; 
 /** The conversation as the panel shows it: what the user typed, Kairos's replies, and tool activity. */
 export async function transcript(sessionId: string) {
   const rows = (await getStore().listChatMessages(sessionId)) as unknown as (Stored & { at: string })[];
-  const out: { role: "user" | "assistant" | "activity"; text: string; at: string }[] = [];
+  const out: { role: "user" | "assistant" | "activity" | "drafts"; text: string; at: string; outcomes?: { invoiceNumber: string | null; outcome: string }[] }[] = [];
+  let pending: { invoiceNumber: string | null; outcome: string }[] = [];
   for (const r of rows) {
-    if (r.kind === "user_text") out.push({ role: "user", text: r.content.display, at: r.at });
-    else if (r.kind === "tool_results") for (const a of r.content.activity) out.push({ role: "activity", text: a.summary, at: r.at });
+    if (r.kind === "user_text") {
+      if (pending.length) { out.push({ role: "drafts", text: "", at: r.at, outcomes: pending }); pending = []; }
+      out.push({ role: "user", text: r.content.display, at: r.at });
+    } else if (r.kind === "tool_results") {
+      for (const a of r.content.activity) out.push({ role: "activity", text: a.summary, at: r.at });
+      if (r.content.outcomes) pending.push(...r.content.outcomes);
+    }
     else {
       const text = r.content.blocks.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n").trim();
       if (text) out.push({ role: "assistant", text, at: r.at });
     }
   }
+  // Like the live panel: the drafts card follows Kairos's reply.
+  if (pending.length) out.push({ role: "drafts", text: "", at: rows.at(-1)?.at ?? "", outcomes: pending });
   return out;
 }

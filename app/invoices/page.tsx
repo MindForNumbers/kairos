@@ -1,3 +1,4 @@
+import WithAssistant from "../WithAssistant";
 import { requirePageSession } from "@/lib/auth-server";
 import Link from "next/link";
 import { listInvoices } from "@/lib/paypal/invoices";
@@ -28,7 +29,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const totalPages = data.total_pages ?? 1;
 
   return (
-    <>
+    <WithAssistant>
       <h1>Invoices</h1>
       <div className="card">
         {items.length === 0 ? (
@@ -60,6 +61,6 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
           {page < totalPages && <Link className="button" href={`/invoices?page=${page + 1}`}>Next →</Link>}
         </div>
       )}
-    </>
+    </WithAssistant>
   );
 }

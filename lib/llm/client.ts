@@ -178,6 +178,8 @@ export type ChatRequest = {
   tools: Anthropic.Tool[];
   maxTokens: number;
   effort: Effort;
+  /** If set, the reply streams and each text chunk is passed here as it arrives. */
+  onTextDelta?: (delta: string) => void;
 };
 export type ChatResponse = {
   model: string;
@@ -191,17 +193,25 @@ export type ChatResponse = {
 export type ChatTransport = (req: ChatRequest) => Promise<ChatResponse>;
 
 const anthropicChatTransport: ChatTransport = async (req) => {
-  const { data: response, request_id } = await getClient()
-    .messages.create({
-      model: req.model,
-      max_tokens: req.maxTokens,
-      system: req.system,
-      messages: req.messages,
-      tools: req.tools,
-      tool_choice: { type: "auto" },
-      output_config: { effort: req.effort },
-    })
-    .withResponse();
+  const params = {
+    model: req.model,
+    max_tokens: req.maxTokens,
+    system: req.system,
+    messages: req.messages,
+    tools: req.tools,
+    tool_choice: { type: "auto" as const },
+    output_config: { effort: req.effort },
+  };
+  let response: Anthropic.Message;
+  let request_id: string | null | undefined;
+  if (req.onTextDelta) {
+    const stream = getClient().messages.stream(params);
+    stream.on("text", (delta) => req.onTextDelta!(delta));
+    response = await stream.finalMessage();
+    request_id = stream.request_id;
+  } else {
+    ({ data: response, request_id } = await getClient().messages.create(params).withResponse());
+  }
   return {
     model: response.model,
     requestId: request_id ?? null,

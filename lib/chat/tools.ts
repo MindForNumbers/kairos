@@ -5,7 +5,7 @@ import { getStore, type Proposal } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "@/lib/agent/paypal-read";
 import { CHASEABLE, GRACE_DAYS_EXPORT, REMINDER_COOLDOWN_DAYS, dueDateOf, holdingProposal, sweep } from "@/lib/agent/sweep";
 import { cleanUntrusted, flagUntrusted } from "@/lib/agent/untrusted";
-import { ESCALATE_AFTER_DAYS } from "@/lib/agent/policy";
+import { ESCALATE_AFTER_DAYS, currentReason } from "@/lib/agent/policy";
 import { runAgent } from "@/lib/agent/pipeline";
 import { RunBusyError, withRunLock } from "@/lib/agent/run-guard";
 import { CostCapError } from "@/lib/agent/budget";
@@ -95,7 +95,7 @@ async function agentState(inv: Invoice, today: string): Promise<{ state: AgentSt
       : hold.proposal.status === "blocked"
         ? "a draft was blocked by Kairos's checks and is held on the Approvals page; resolve or dismiss it there, and Kairos can draft again on a later run"
         : "escalated to a human on the Approvals page; resolve or dismiss it there";
-    return { state: { state: "needs_human", detail, lastReminder }, holdReason: hold.proposal.reason };
+    return { state: { state: "needs_human", detail, lastReminder }, holdReason: currentReason(hold.proposal.reason, late) };
   }
   if (late < GRACE_DAYS_EXPORT) return { state: { state: "grace_period", detail: `${late} days late; reminders start after ${GRACE_DAYS_EXPORT} days`, lastReminder }, holdReason: null };
   if (last && Date.parse(last.sentAt) > nowMs() - REMINDER_COOLDOWN_DAYS * 86_400_000) {
@@ -292,7 +292,7 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
     const reasons: Record<string, string | null> = {};
     const events: { at: string; what: string; proposalId?: string }[] = [];
     for (const p of proposals) {
-      reasons[p.id] = p.reason;
+      reasons[p.id] = currentReason(p.reason, daysOverdue(inv, ctx.today) || null);
       events.push({ at: p.createdAt, proposalId: p.id, what: p.kind === "escalate" ? "Kairos escalated it to a human (no draft)" : `Kairos drafted a ${p.tone ?? ""} reminder (revision ${p.revision})` });
       for (const e of (await store.listAudit({ entityType: "proposal", entityId: p.id })).reverse()) {
         const label = AUDIT_LABEL[e.event] ?? (e.event.startsWith("executor.") ? `executor: ${e.event.slice(9)}` : null);
@@ -318,8 +318,10 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
     };
   },
 
-  async get_queue() {
+  async get_queue(_i, ctx) {
     const store = getStore();
+    const { invoices } = await ctx.listAll();
+    const daysNow = (id: string) => { const inv = invoices.find((x) => x.id === id); return inv ? daysOverdue(inv, ctx.today) || null : null; };
     const [queued, human] = await Promise.all([
       store.listProposals({ status: ["passed", "approved"] }),
       store.listProposals({ status: ["blocked", "escalated"] }),
@@ -333,7 +335,7 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
         needsHuman: await Promise.all(open.map(async (p) => ({ invoiceNumber: await invoiceNumber(p), invoiceId: p.invoiceId, status: p.status, proposalId: p.id }))),
         approvalsPage: "/approvals",
       },
-      untrusted: { reasons: Object.fromEntries(open.map((p) => [p.id, p.reason])) },
+      untrusted: { reasons: Object.fromEntries(open.map((p) => [p.id, currentReason(p.reason, daysNow(p.invoiceId))])) },
     };
   },
 

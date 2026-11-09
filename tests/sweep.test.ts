@@ -83,3 +83,18 @@ test("sweep ranking: age bucket, then amount due, then age", () => {
   ];
   assert.deepEqual(recs.sort(compareUrgency).map((r) => r.invoiceId), ["late-small", "late-big", "mid", "slight-big", "slight-small"]);
 });
+
+test("run set: policy escalations don't use up the 5 drafting slots", async () => {
+  const { chooseRunSet } = await import("../lib/agent/sweep");
+  const today = "2026-11-08";
+  const mk = (id: string, due: string, amount: string) => toRecord(inv(id, due, amount), today, null);
+  const recs = [
+    mk("esc-77", "2026-08-23", "380.00"),   // > 60 days: policy escalation
+    mk("esc-90", "2026-08-10", "50.00"),    // > 60 days: policy escalation
+    mk("d50", "2026-09-19", "2350.00"), mk("d14", "2026-10-25", "310.00"), mk("d8", "2026-10-31", "640.00"),
+    mk("d7", "2026-11-01", "95.00"), mk("d4", "2026-11-04", "250.00"), mk("d3", "2026-11-05", "20.00"),
+  ];
+  const { candidates, deferred } = chooseRunSet(recs);
+  assert.deepEqual(candidates.map((r) => r.invoiceId).sort(), ["d14", "d4", "d50", "d7", "d8", "esc-77", "esc-90"].sort(), "both escalations + 5 drafts");
+  assert.deepEqual(deferred.map((r) => r.invoiceId), ["d3"], "only a draftable invoice is ever deferred");
+});

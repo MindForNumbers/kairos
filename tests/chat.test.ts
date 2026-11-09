@@ -39,9 +39,12 @@ const use = (name: string, input: unknown, id = `tu_${name}`) => ({ type: "tool_
 function stubChat(step: Step) {
   const requests: ChatRequest[] = [];
   setChatTransportForTesting(async (req) => {
-    requests.push(structuredClone(req));
+    const { onTextDelta: _cb, ...clonable } = req;
+    requests.push({ ...structuredClone(clonable), onTextDelta: req.onTextDelta });
     const r = step(req, requests.length - 1);
     const content = r.content;
+    // Like the real streaming transport: text arrives in chunks before the call returns.
+    for (const blk of content) if (blk.type === "text") for (const piece of blk.text.match(/.{1,8}/gs) ?? []) req.onTextDelta?.(piece);
     return {
       model: req.model, requestId: `req_chat_${requests.length}`, refusalCategory: null,
       stopReason: r.stopReason ?? (content.some((b) => b.type === "tool_use") ? "tool_use" : "end_turn"),
@@ -216,4 +219,21 @@ test("history tools run end to end and report times in the business timezone (fo
   assert.equal(h.remindersActuallySent, 0);
   assert.equal(h.drafts[0].now, "waiting on the Approvals page (can be approved)");
   assert.match(h.drafts[0].drafted, /PST$/);
+});
+
+test("streaming events: text chunks, tool start/done, draft outcomes, in order", async () => {
+  stubModels({ drafter: (r) => ({ json: cleanDrafts(r.user) }), critic: (r) => ({ json: passAll(r.user) }) });
+  stubChat((_r, n) => n === 0 ? { content: [text("Let me draft those."), use("request_reminder_proposals", { invoices: ["DEMO-05"] })] }
+    : { content: [text("DEMO-05 is waiting in Approvals.")] });
+  const ev: string[] = [];
+  let streamed = "";
+  const r = await chatTurn({ text: "Draft reminders for overdue invoices" }, {
+    onText: (d) => { streamed += d; if (ev.at(-1) !== "text") ev.push("text"); },
+    onToolStart: (a) => ev.push(`start:${a.summary}`),
+    onToolDone: (a) => ev.push(`done:${a.ok}`),
+    onProposals: (p) => ev.push(`proposals:${p.map((x) => `${x.invoiceNumber}=${x.outcome}`).join(",")}`),
+  });
+  assert.deepEqual(ev, ["text", "start:Drafting reminders for DEMO-05", "proposals:DEMO-05=passed", "done:true", "text"]);
+  assert.equal(streamed, "Let me draft those.DEMO-05 is waiting in Approvals.");
+  assert.equal(r.reply, "DEMO-05 is waiting in Approvals.");
 });

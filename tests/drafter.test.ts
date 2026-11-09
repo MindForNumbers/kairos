@@ -68,3 +68,12 @@ test("note assembly: fixed closing and sign-off; model sign-offs stripped", () =
   assert.equal(BODY_MAX_WORDS, 80 - 12);
   assert.ok(wordCount(assembleNote("a ".repeat(BODY_MAX_WORDS))) <= 80);
 });
+
+test("held reasons show today's day count", async () => {
+  const { currentReason } = await import("../lib/agent/policy");
+  assert.equal(currentReason("Policy: 75 days overdue (over 60): policy routes to a human, no automated reminder", 78),
+    "Policy: 78 days overdue (over 60): policy routes to a human, no automated reminder");
+  assert.equal(currentReason("Policy: More than 60 days overdue: policy routes it to a human, no automated reminder", 78),
+    "Policy: More than 60 days overdue: policy routes it to a human, no automated reminder (now 78 days overdue)");
+  assert.equal(currentReason("(b, critic) offers 10 days overdue grace", 78), "(b, critic) offers 10 days overdue grace", "only our Policy text is rewritten");
+});
