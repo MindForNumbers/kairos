@@ -36,7 +36,7 @@ The form shows every finding next to its field. If any errors remain, the owner 
 
 ## PayPal API code and the APIMatic plugin
 
-New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@context-plugins` v0.4.1, the `paypal:typescript-*` skills) and its generated SDK, the `paypal` package (PayPal Server SDK v2.29.0, installed from `github:context-plugins/paypal-typescript-sdk#main`). That SDK covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**.
+New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@context-plugins` v0.4.1, the `paypal:typescript-*` skills) and its generated SDK, the `paypal` package (PayPal Server SDK v2.29.0, pinned to commit `5d0df8a` over public https: `git+https://github.com/context-plugins/paypal-typescript-sdk.git#5d0df8a8817e5fdf2e2cd48e68f790ea4730aab2`). `npm ci` clones it without credentials and builds it with the SDK's `prepare` script, because the repo has no prebuilt `dist/`. npm rewrites a GitHub `resolved` URL to `git+ssh` on `npm install`, so after any `npm install`, check that `package-lock.json` still says `git+https`. That SDK covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**.
 
 **What the plugin built: read-only Transaction Search, and nothing else.**
 - `paypal-plan.md`: the plugin's required plan and contract sheet. It covers the operation's signature, fields and defaults, error arms, host binding, retry and logging choices, and the "when the API says no" table, all taken from the SDK map that ships in the package.

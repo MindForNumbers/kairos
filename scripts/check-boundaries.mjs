@@ -101,5 +101,12 @@ for (const f of files) {
     }
   }
 }
+// Deploys (Render) have no SSH key: every git dependency must resolve over https. `npm install`
+// rewrites a GitHub dependency's lockfile `resolved` to git+ssh, so catch it here.
+const lock = readFileSync("package-lock.json", "utf8");
+if (/"resolved":\s*"git\+ssh:/.test(lock)) {
+  console.error('✗ package-lock.json: a dependency resolves via git+ssh; set its "resolved" to git+https:// (deploys have no SSH key)');
+  failed++;
+}
 if (failed) process.exit(1);
-console.log(`✓ boundaries ok (${rules.length} rules, ${files.length} files)`);
+console.log(`✓ boundaries ok (${rules.length} rules + lockfile check, ${files.length} files)`);

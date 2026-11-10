@@ -17,7 +17,7 @@ Everything else in Kairos stays on the hand-written Invoicing v2 client in `lib/
 - **Module format:** `package.json` has no `"type"`; `tsconfig` `module: esnext`, `moduleResolution: bundler`. Next.js bundles the server code (ESM); `npm test` runs through `tsx` (CJS). Each process loads **one** dialect, but to be dialect-safe the error boundary narrows on `err.kind` / `err.status` / `err.payload.kind`, never on `instanceof` across modules.
 - **Runtime:** Node 22.18 (SDK floor `>=20.3` ✓). Server-only (`import "server-only"`).
 - **tsconfig:** `strict: true`; `exactOptionalPropertyTypes` off; `verbatimModuleSyntax` off. Use `import type` for type-only names anyway.
-- **Toolchain:** npm; `paypal` installed from `github:context-plugins/paypal-typescript-sdk#main` (v2.29.0, built by its `prepare` → `dist/`). Commands: `npm run typecheck`, `npm test`, `npm run check:boundaries`, `npm run build`.
+- **Toolchain:** npm; `paypal` pinned to `git+https://github.com/context-plugins/paypal-typescript-sdk.git#5d0df8a8817e5fdf2e2cd48e68f790ea4730aab2` (v2.29.0; lockfile `resolved` kept as `git+https` so installs need no SSH key, built by its `prepare` → `dist/`). Commands: `npm run typecheck`, `npm test`, `npm run check:boundaries`, `npm run build`.
 - **Baseline (untouched tree, before this work):** typecheck clean, boundaries ok (11 rules), 103 tests pass.
 - **Credentials:** `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` from `.env` (Render env tomorrow). Never logged.
 - **Smoke (read-only, scratchpad, real sandbox credential, 2026-11-09 ~19:3x PST):** `searchTransactions` last 7 days → **200**, `totalItems 0`, `lastRefreshedDatetime 2026-11-10T03:29:59Z`. The scope is granted (a 403 would mean not enabled); there's no data yet (lag ≤ 3 h per api-reference).
