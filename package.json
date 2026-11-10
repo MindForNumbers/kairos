@@ -23,6 +23,7 @@
     "@anthropic-ai/sdk": "^1.6.0",
     "better-sqlite3": "^13.0.3",
     "next": "^16.4.5",
+    "paypal": "github:context-plugins/paypal-typescript-sdk#main",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "server-only": "^0.0.1",

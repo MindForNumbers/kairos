@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
 import { setChatTransportForTesting, setTransportForTesting, type ChatRequest, type ChatResponse } from "../lib/llm/client";
 import { setClockForTesting } from "../lib/clock";
+import { searchResponseSchema, type TransactionDetails } from "paypal";
+import { setTransactionSearchFetchForTesting } from "../lib/payments/received";
 import { setPaypalReadsForTesting } from "../lib/agent/paypal-read";
 import type { Invoice } from "../lib/paypal/invoices";
 import { chatTurn, formatToolResult, MAX_CALLS, transcript } from "../lib/chat/engine";
@@ -66,13 +68,35 @@ const lastToolResult = (req: ChatRequest) => {
 let store: Store;
 beforeEach(() => {
   store = isolate("2026-11-08T20:00:00Z");
+  process.env.PAYPAL_CLIENT_ID = "id";
+  process.env.PAYPAL_CLIENT_SECRET = "secret";
+  fakeTransactionSearch([]);
   const invs = fixtureInvoices();
   setPaypalReadsForTesting({
     listAllInvoices: async () => ({ invoices: invs, truncated: false }),
     fetchInvoice: async (id) => { const i = invs.find((x) => x.id === id); if (!i) throw new Error("404"); return structuredClone(i); },
   });
 });
+/** Transaction Search fake: answers the token request, then searches with `rows` (or an error status). */
+function fakeTransactionSearch(rows: TransactionDetails[] | number) {
+  const searches: URL[] = [];
+  setTransactionSearchFetchForTesting(async (input, init) => {
+    const url = new URL(new Request(input, init).url);
+    if (url.pathname === "/v1/oauth2/token") return Response.json({ access_token: "T", token_type: "Bearer", expires_in: 3600 });
+    searches.push(url);
+    if (typeof rows === "number") return Response.json({ name: "NOT_AUTHORIZED", message: "no", debug_id: "d" }, { status: rows });
+    return Response.json(searchResponseSchema.encode({ transactionDetails: rows, page: 1, totalPages: rows.length ? 1 : 0, lastRefreshedDatetime: "2026-11-08T19:00:00Z" }));
+  });
+  return searches;
+}
+const paypalPayment = (id: string, value: string, invoiceId: string, at = "2026-11-07T18:00:00Z"): TransactionDetails => ({
+  transactionInfo: { transactionId: id, transactionEventCode: "T0007", transactionStatus: "S", transactionInitiationDate: at, transactionAmount: { currencyCode: "USD", value } },
+  payerInfo: { emailAddress: "payer@example.com", payerName: { givenName: "Pat", surname: "Payer" } },
+  cartInfo: { paypalInvoiceId: invoiceId },
+});
+
 afterEach(() => {
+  setTransactionSearchFetchForTesting(null);
   reset();
   setChatTransportForTesting(null);
   setPaypalReadsForTesting(null);
@@ -82,7 +106,7 @@ afterEach(() => {
 test("tool allowlist: read-only tools plus exactly one draft-request action", () => {
   assert.deepEqual([...TOOL_NAMES].sort(), [
     "customer_history", "customers_owing", "get_invoice", "get_queue", "get_report", "get_summary", "list_invoices",
-    "preview_overdue", "recent_sends", "reminder_history", "request_reminder_proposals",
+    "preview_overdue", "recent_payments", "recent_sends", "reminder_history", "request_reminder_proposals",
   ]);
 });
 
@@ -328,4 +352,41 @@ test("briefing wording: one model call per shape, reused with fresh numbers; oth
   assert.equal(calls, 1);
   const spent = await store.modelSpendSince(new Date("2026-11-08T00:00:00Z"));
   assert.ok(spent > 0, "the briefing call is recorded against the daily cap");
+});
+
+test("recent_payments: PayPal payments with the Kairos invoice they paid; payer names stay untrusted", async () => {
+  const target = fixtureInvoices().find((x) => x.detail.invoice_number === "DEMO-05")!;
+  fakeTransactionSearch([paypalPayment("TX1", "640.00", target.id)]);
+  const r = await runTool("recent_payments", { period: "this_week", limit: 10 }, new ToolContext());
+  const d = r.data as { available: boolean; period: { from: string }; totalReceived: { amount: string }[]; payments: { invoiceNumber: string; amount: string; receivedAt: string }[]; note: string };
+  assert.equal(d.available, true);
+  assert.equal(d.period.from, "2026-11-02", "this week starts Monday");
+  assert.deepEqual(d.totalReceived, [{ amount: "640.00 USD", payments: 1 }]);
+  assert.equal(d.payments[0].invoiceNumber, "DEMO-05");
+  assert.match(d.payments[0].receivedAt, /P[SD]T$/);
+  assert.match(d.note, /3 hours/);
+  assert.ok(!JSON.stringify(r.data).includes("Pat Payer"), "payer name only in untrusted");
+  assert.equal((r.untrusted as { payerNames: Record<string, string> }).payerNames.TX1, "Pat Payer");
+});
+
+test("recent_payments: Transaction Search not enabled is reported, not an error", async () => {
+  fakeTransactionSearch(403);
+  const d = (await runTool("recent_payments", { period: "today", limit: 5 }, new ToolContext())).data as { available: boolean; state: string };
+  assert.deepEqual([d.available, d.state], [false, "not_enabled"]);
+});
+
+test("get_report collected = PayPal received + payments recorded by hand; falls back to invoice records when unavailable", async () => {
+  const target = fixtureInvoices().find((x) => x.detail.invoice_number === "DEMO-05")!;
+  fakeTransactionSearch([paypalPayment("TX1", "250.00", target.id)]);
+  const r = (await runTool("get_report", { period: "this_month" }, new ToolContext())).data as { money: { collectedInPeriod: string[]; paymentsInPeriod: number; collectedBreakdown: Record<string, unknown> } };
+  // DEMO-02's BANK_TRANSFER of 480.00 on Nov 2 + the PayPal payment of 250.00.
+  assert.deepEqual(r.money.collectedInPeriod, ["730.00 USD"]);
+  assert.equal(r.money.paymentsInPeriod, 2);
+  assert.deepEqual(r.money.collectedBreakdown.receivedViaPayPal, ["250.00 USD"]);
+  assert.deepEqual(r.money.collectedBreakdown.recordedByHand, ["480.00 USD"]);
+
+  fakeTransactionSearch(403);
+  const r2 = (await runTool("get_report", { period: "this_month" }, new ToolContext())).data as { money: { collectedInPeriod: string[]; collectedBreakdown: { source: string } } };
+  assert.deepEqual(r2.money.collectedInPeriod, ["480.00 USD"]);
+  assert.equal(r2.money.collectedBreakdown.source, "payments recorded on invoices only");
 });

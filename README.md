@@ -36,4 +36,17 @@ The form shows every finding next to its field. If any errors remain, the owner 
 
 ## PayPal API code and the APIMatic plugin
 
-The project was required to build any new PayPal API code with APIMatic's Context Plugin (`paypal@context-plugins`, v0.4.1, which provides the `paypal:typescript-*` skills). That plugin is installed and was checked. Its SDK is the PayPal Server SDK, which covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**. Every PayPal call in Kairos is an Invoicing API v2 call, so **no part of Kairos was built with the plugin**. The Invoicing calls live in `lib/paypal/` (hand-written, predating the plugin), and the features added since the plugin was installed (multi-customer demo seed, chat `recent_sends`, photo/voice intake, the customer business-name field) reuse those existing calls and add no new PayPal endpoint code. The business-name field adds `billing_info.business_name` to the existing create-invoice request body.
+New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@context-plugins` v0.4.1, the `paypal:typescript-*` skills) and its generated SDK, the `paypal` package (PayPal Server SDK v2.29.0, installed from `github:context-plugins/paypal-typescript-sdk#main`). That SDK covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**.
+
+**What the plugin built: read-only Transaction Search, and nothing else.**
+- `paypal-plan.md`: the plugin's required plan and contract sheet. It covers the operation's signature, fields and defaults, error arms, host binding, retry and logging choices, and the "when the API says no" table, all taken from the SDK map that ships in the package.
+- `lib/payments/received.ts`: the SDK client (one per process, sandbox or live from `PAYPAL_ENVIRONMENT`, logging forced off, `retry: { maxRetries: 2, timeout: 20000 }`) and the one SDK call, `client.transactionSearch.searchTransactions`. It handles pagination, splitting ranges into windows of 31 days or less, the "payment received" filter, error classification (403 → "not enabled", retried once with a fresh token; everything else → "unavailable" with a fixed message and the API's reason logged) and "no data yet" (an empty list plus PayPal's `last_refreshed_datetime`).
+- `tests/payments.test.ts`: tests through the SDK's `fetch` seam, with wire bodies built by the SDK's own `searchResponseSchema`.
+- Two rules in `scripts/check-boundaries.mjs`: only `lib/payments/` may import the SDK, and it may call only `transactionSearch.searchTransactions`, with no HTTP of its own and no access to `lib/paypal`, the queue, the executor or the database.
+
+**What uses it, but wasn't built by the plugin:**
+- the chat's `recent_payments` tool;
+- `get_report`'s "collected" figure (PayPal-received payments plus payments recorded by hand on invoices, which Transaction Search never lists; it falls back to invoice records when Transaction Search is unavailable);
+- the briefing's "received through PayPal this week" figure, cached for 10 minutes.
+
+**Not built with the plugin:** every Invoicing API v2 call (`lib/paypal/`, hand-written, predating the plugin). That covers the invoices UI, the agent's reads, the executor's reminder send, the seed and cleanup scripts, and photo/voice intake's Create. The business-name field adds `billing_info.business_name` to that existing create request.

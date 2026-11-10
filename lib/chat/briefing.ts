@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
-import { nowMs, startOfLocalDay } from "@/lib/clock";
+import { addDays, localDate, nowMs, startOfLocalDate, startOfLocalDay, startOfLocalWeek } from "@/lib/clock";
+import { listPaymentsReceived, totalByCurrency } from "@/lib/payments/received";
 import { getStore, type Proposal } from "@/lib/db";
 import { loadDashboard, type Dashboard } from "@/lib/dashboard";
 import { createBudget } from "@/lib/agent/budget";
@@ -39,6 +40,8 @@ export type BriefingFacts = {
   needsHuman: number;
   sentToday: number;
   urgent: Urgent | null;
+  /** PayPal payments received this week (Transaction Search); null when it isn't available. */
+  receivedThisWeek: { totals: Totals; count: number } | null;
   truncated: boolean;
 };
 
@@ -49,7 +52,7 @@ const fmtMoney = (value: string, currency: string) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(value));
 
 /** Pure: dashboard + queue + ledger count → facts. */
-export function factsFrom(d: Dashboard, openProposals: Proposal[], sentToday: number): BriefingFacts {
+export function factsFrom(d: Dashboard, openProposals: Proposal[], sentToday: number, receivedThisWeek: BriefingFacts["receivedThisWeek"] = null): BriefingFacts {
   const byId = new Map(d.invoices.map((i) => [i.id, i]));
   const dueOf = (id: string) => { const inv = byId.get(id); return inv ? daysOverdue(inv, d.today) : 0; };
   const pick = (ps: Proposal[]) => [...ps].filter((p) => byId.has(p.invoiceId)).sort((a, b) => dueOf(b.invoiceId) - dueOf(a.invoiceId))[0];
@@ -85,7 +88,7 @@ export function factsFrom(d: Dashboard, openProposals: Proposal[], sentToday: nu
   return {
     today: d.today, unpaid: d.unpaid, openCount: d.unpaid.reduce((n, u) => n + u.count, 0),
     overdueCount: d.overdue.count, oldestOverdueDays: d.overdue.oldestDays,
-    awaitingApproval: d.queue.awaitingApproval, needsHuman: d.queue.needsHuman, sentToday, urgent, truncated: d.truncated,
+    awaitingApproval: d.queue.awaitingApproval, needsHuman: d.queue.needsHuman, sentToday, urgent, receivedThisWeek, truncated: d.truncated,
   };
 }
 
@@ -103,6 +106,7 @@ export function values(f: BriefingFacts): Record<string, string> {
     remindersAwaiting: plural(f.awaitingApproval, "reminder", "reminders"),
     itemsNeedingYou: plural(f.needsHuman, "item", "items"),
     remindersSentToday: plural(f.sentToday, "reminder", "reminders"),
+    receivedThisWeek: f.receivedThisWeek ? (f.receivedThisWeek.totals.length ? f.receivedThisWeek.totals.map((t) => fmtMoney(t.value, t.currency)).join(" + ") : "$0.00") : "",
     urgentInvoice: f.urgent?.invoiceNumber ?? "",
     urgentCustomer: f.urgent?.customer ?? "",
     urgentAmount: f.urgent?.amount ?? "",
@@ -113,7 +117,7 @@ export function values(f: BriefingFacts): Record<string, string> {
 /** Which counts are zero / one / many, plus the urgent kind. Templates are cached per shape. */
 export function shapeOf(f: BriefingFacts): string {
   const z = (n: number) => (n === 0 ? "0" : n === 1 ? "1" : "n");
-  return [f.openCount, f.overdueCount, f.awaitingApproval, f.needsHuman, f.sentToday].map(z).join("") + `:${f.urgent?.kind ?? "none"}`;
+  return [f.openCount, f.overdueCount, f.awaitingApproval, f.needsHuman, f.sentToday].map(z).join("") + `:${f.urgent?.kind ?? "none"}:${f.receivedThisWeek === null ? "x" : f.receivedThisWeek.count === 0 ? "0" : "p"}`;
 }
 
 /** The placeholders a template for this shape must use (everything that's non-empty). */
@@ -121,6 +125,7 @@ export function requiredPlaceholders(f: BriefingFacts): string[] {
   const req = ["unpaid", "overdueInvoices", "remindersAwaiting", "itemsNeedingYou", "remindersSentToday"];
   if (f.oldestOverdueDays !== null) req.push("oldestOverdueDays");
   if (f.urgent) req.push("urgentInvoice", "urgentCustomer", "urgentAmount", "urgentWhy");
+  if (f.receivedThisWeek) req.push("receivedThisWeek");
   return req;
 }
 
@@ -130,6 +135,7 @@ export function codeTemplate(f: BriefingFacts): string {
     `You have {unpaid} outstanding across {openInvoices}. {overdueInvoices} ${f.overdueCount === 1 ? "is" : "are"} overdue${f.oldestOverdueDays !== null ? ", the oldest by {oldestOverdueDays}" : ""}.`,
     `{remindersAwaiting} ${f.awaitingApproval === 1 ? "is" : "are"} waiting for your approval, {itemsNeedingYou} ${f.needsHuman === 1 ? "needs" : "need"} you, and {remindersSentToday} went out today.`,
   ];
+  if (f.receivedThisWeek) lines.push(`{receivedThisWeek} came in through PayPal this week.`);
   if (f.urgent) lines.push(`Most urgent: {urgentInvoice} for {urgentCustomer} ({urgentAmount}), {urgentWhy}.`);
   return lines.join("\n");
 }
@@ -178,7 +184,7 @@ const g = globalThis as unknown as { __kairosBriefing?: Cache };
 const cache = (g.__kairosBriefing ??= { templates: new Map(), lastGenAt: 0 });
 
 /** Tests only. */
-export function resetBriefingCacheForTesting() { cache.templates.clear(); cache.lastGenAt = 0; }
+export function resetBriefingCacheForTesting() { cache.templates.clear(); cache.lastGenAt = 0; receivedCache = null; }
 
 export async function templateFor(f: BriefingFacts): Promise<{ template: string; wording: "model" | "code" }> {
   const shape = shapeOf(f);
@@ -191,10 +197,11 @@ export async function templateFor(f: BriefingFacts): Promise<{ template: string;
     `Required placeholders: ${requiredPlaceholders(f).map((p) => `{${p}}`).join(" ")}`,
     `Counts: open invoices ${word(f.openCount)}, overdue ${word(f.overdueCount)}, reminders awaiting approval ${word(f.awaitingApproval)}, items needing the owner ${word(f.needsHuman)}, reminders sent today ${word(f.sentToday)}.`,
     f.urgent ? `There is a most-urgent invoice; {urgentWhy} is a lowercase clause explaining why (kind: ${f.urgent.kind}).` : "There is no urgent item.",
+    ...(f.receivedThisWeek ? ["{receivedThisWeek} is money received through PayPal this week only (not payments recorded by hand): always say \"through PayPal\" next to it."] : []),
     `Example of a valid template (rephrase it, keep it accurate): ${JSON.stringify(codeTemplate(f))}`,
   ].join("\n");
   try {
-    const r = await structuredCall({ purpose: "briefing", model: chatModel(), system: SYSTEM, user, schema: TemplateSchema, effort: "low", maxTokens: 1500, budget: createBudget(null) });
+    const r = await structuredCall({ purpose: "briefing", model: chatModel(), system: SYSTEM, user, schema: TemplateSchema, effort: "low", maxTokens: 4000, budget: createBudget(null) });
     if (r.ok && validTemplate(r.data.template, f)) {
       cache.templates.set(shape, r.data.template);
       return { template: r.data.template, wording: "model" };
@@ -205,14 +212,28 @@ export async function templateFor(f: BriefingFacts): Promise<{ template: string;
   return { template: codeTemplate(f), wording: "code" };
 }
 
+// PayPal's data lags up to 3 hours anyway, so a page load needn't query it every time.
+const RECEIVED_TTL_MS = 10 * 60_000;
+let receivedCache: { week: string; at: number; value: BriefingFacts["receivedThisWeek"] } | null = null;
+
+async function receivedThisWeek(today: string): Promise<BriefingFacts["receivedThisWeek"]> {
+  const week = startOfLocalWeek(today);
+  if (receivedCache && receivedCache.week === week && nowMs() - receivedCache.at < RECEIVED_TTL_MS) return receivedCache.value;
+  const r = await listPaymentsReceived(startOfLocalDate(week), startOfLocalDate(addDays(today, 1)));
+  const value = r.state === "ok" ? { totals: totalByCurrency(r.payments), count: r.payments.length } : null;
+  receivedCache = { week, at: nowMs(), value };
+  return value;
+}
+
 export async function getBriefing(): Promise<Briefing> {
   const store = getStore();
-  const [d, proposals, sentToday] = await Promise.all([
+  const [d, proposals, sentToday, received] = await Promise.all([
     loadDashboard(),
     store.listProposals({ status: ["passed", "approved", "blocked", "escalated"] }),
     store.countSendsSince(startOfLocalDay()),
+    receivedThisWeek(localDate()),
   ]);
-  const facts = factsFrom(d, proposals, sentToday);
+  const facts = factsFrom(d, proposals, sentToday, received);
   const { template, wording } = await templateFor(facts);
   return { text: render(template, facts), chips: chipsFor(facts), facts, wording };
 }

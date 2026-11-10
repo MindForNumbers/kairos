@@ -81,6 +81,18 @@ export function startOfLocalDay(at: Date = now(), tz = timezone()): Date {
   return new Date(guess);
 }
 
+/** The UTC instant of local midnight at the start of a YYYY-MM-DD business date. */
+export function startOfLocalDate(date: string, tz = timezone()): Date {
+  // Noon UTC falls on the same calendar date in every zone from UTC-11 to UTC+11.
+  return startOfLocalDay(new Date(`${date}T12:00:00Z`), tz);
+}
+
+/** Monday of the business week containing `date` (YYYY-MM-DD). */
+export function startOfLocalWeek(date: string): string {
+  const dow = new Date(`${date}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  return addDays(date, -((dow + 6) % 7));
+}
+
 /** Calendar date `n` days after a YYYY-MM-DD date (negative n goes back). */
 export function addDays(date: string, n: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);

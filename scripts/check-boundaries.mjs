@@ -73,6 +73,18 @@ const rules = [
     forbid: /lib\/(paypal|queue|executor)\b|paypal-read|\bfetch\(|["'`]\/api\/|from\s+["']node:(fs|fs\/promises|http|https|net)["']|\.(createApproval|claimApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|appendChatMessage)\(|\b(writeFile|createWriteStream)\b/,
   },
   {
+    name: "Only lib/payments/ imports the APIMatic PayPal SDK (package \"paypal\")",
+    applies: (f) => !f.startsWith("lib/payments/") && !f.startsWith("tests/") && f !== "scripts/check-boundaries.mjs",
+    forbid: /from\s+["']paypal["']|require\(["']paypal["']\)/,
+  },
+  {
+    name: "lib/payments/ is read-only Transaction Search: only transactionSearch.searchTransactions, no other SDK resource, no HTTP, no lib/paypal, queue, executor or store",
+    applies: (f) => f.startsWith("lib/payments/"),
+    check: (src) =>
+      !/\.(orders|payments|vault|subscriptions)\s*\.|\bfetch\(|lib\/(paypal|queue|executor|db)\b|getStore\(/.test(src) &&
+      [...src.matchAll(/transactionSearch\.(\w+)/g)].every((m) => m[1] === "searchTransactions"),
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,

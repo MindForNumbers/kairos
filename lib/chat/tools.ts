@@ -1,6 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { addDays, daysBetween, localDate, nowMs, startOfLocalDay, timezone } from "@/lib/clock";
+import { addDays, daysBetween, localDate, nowMs, startOfLocalDate, startOfLocalDay, startOfLocalWeek, timezone } from "@/lib/clock";
+import { LAG_NOTE, listPaymentsReceived, totalByCurrency } from "@/lib/payments/received";
 import { getStore, type Proposal } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "@/lib/agent/paypal-read";
 import { CHASEABLE, GRACE_DAYS_EXPORT, REMINDER_COOLDOWN_DAYS, dueDateOf, holdingProposal, sweep } from "@/lib/agent/sweep";
@@ -140,6 +141,12 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
       period: { type: "string", enum: ["today", "last_7_days", "last_30_days", "all"] },
       limit: { type: "integer", description: "1 to 50." },
     }) },
+  { name: "recent_payments", strict: true,
+    description: "Money that came in through PayPal: completed PayPal payments received in a period, newest first, with amount, customer, time (business timezone) and the Kairos invoice it paid when PayPal links one. From PayPal Transaction Search, so payments recorded by hand (bank transfer, cash) are not included and new payments can take up to 3 hours to appear. Use for 'what came in this week', 'any payments today', 'did anyone pay'.",
+    input_schema: obj({
+      period: { type: "string", enum: ["today", "this_week", "last_7_days", "this_month", "last_30_days"] },
+      limit: { type: "integer", description: "1 to 50." },
+    }) },
   { name: "get_report", strict: true,
     description: "Business report for a period: aging of open invoices (current / 1-30 / 31-60 / 61+ days past due), money collected in the period vs invoiced in the period vs outstanding now, top customers owing, and reminder activity (sent in the period, waiting for approval, needing a human, and invoices paid after a reminder). Use for 'summary of this month', 'aging report', 'how are collections going'.",
     input_schema: obj({ period: { type: "string", enum: ["this_month", "last_month", "last_30_days", "year_to_date"] } }) },
@@ -213,6 +220,36 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
     };
   },
 
+  async recent_payments(i, ctx) {
+    const period = String(i.period);
+    const today = ctx.today;
+    const fromDate = period === "today" ? today
+      : period === "this_week" ? startOfLocalWeek(today)
+      : period === "last_7_days" ? addDays(today, -6)
+      : period === "this_month" ? `${today.slice(0, 7)}-01`
+      : addDays(today, -29);
+    const r = await listPaymentsReceived(startOfLocalDate(fromDate), startOfLocalDate(addDays(today, 1)));
+    if (r.state !== "ok") return { data: { today, period: { name: period, from: fromDate, to: today }, available: false, state: r.state, message: r.message } };
+    const { invoices } = await ctx.listAll();
+    const shown = r.payments.slice(0, clampLimit(i.limit));
+    const invoiceFor = (ref: string | null) => (ref ? invoices.find((x) => x.id === ref || x.detail.invoice_number === ref) : undefined);
+    return {
+      data: {
+        today, period: { name: period, from: fromDate, to: today }, available: true,
+        totalReceived: totalByCurrency(r.payments).map((t) => ({ amount: money(t.currency, t.value), payments: t.count })),
+        paymentCount: r.payments.length, shown: shown.length,
+        payments: shown.map((p) => {
+          const inv = invoiceFor(p.invoiceRef);
+          return { transactionId: p.transactionId, receivedAt: local(p.at), amount: money(p.amount.currency, p.amount.value),
+            invoiceNumber: inv?.detail.invoice_number ?? null, customerEmail: (inv ? recipientEmail(inv) : null) ?? p.payerEmail };
+        }),
+        paypalDataAsOf: r.dataAsOf ? local(r.dataAsOf) : null,
+        note: LAG_NOTE, truncated: r.truncated,
+      },
+      untrusted: { payerNames: Object.fromEntries(shown.map((p) => [p.transactionId, cleanUntrusted(p.payerName, 140)])) },
+    };
+  },
+
   async get_report(i, ctx) {
     const { invoices, truncated } = await ctx.listAll();
     const today = ctx.today;
@@ -233,19 +270,43 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
       return { bucket: b === "current" ? "current (not yet due)" : `${b} days past due`, invoices: invs.length, due: sumDue(invs), invoiceNumbers: invs.map((x) => x.detail.invoice_number ?? x.id) };
     });
 
-    // Collected in the period: list results carry paid_amount but no dates, so fetch full records of paid ones.
+    // Collected in the period. Two sources:
+    //  - PayPal Transaction Search: completed PayPal payments received (where it's enabled);
+    //  - payments recorded on invoices: list results carry paid_amount but no dates, so fetch full
+    //    records of paid ones. Those made outside PayPal (bank transfer, cash...) never reach
+    //    Transaction Search, so they're added on top; PayPal-method ones would double count.
     const withPayments = invoices.filter((inv) => toCents(inv.payments?.paid_amount?.value) > 0).slice(0, 40);
-    const full = await Promise.all(withPayments.map((inv) => fetchInvoice(inv.id).catch(() => null)));
-    const collected = new Map<string, number>();
+    const [full, received] = await Promise.all([
+      Promise.all(withPayments.map((inv) => fetchInvoice(inv.id).catch(() => null))),
+      listPaymentsReceived(startOfLocalDate(range.from), startOfLocalDate(addDays(range.to, 1))),
+    ]);
+    const recordedAll = new Map<string, number>();
+    const recordedOffPayPal = new Map<string, number>();
     const paymentDates = new Map<string, string[]>();
-    let paymentCount = 0;
+    let recordedCount = 0;
+    let offPayPalCount = 0;
+    const add = (m: Map<string, number>, cur: string, c: number) => m.set(cur, (m.get(cur) ?? 0) + c);
     for (const inv of full) {
       if (!inv) continue;
       for (const t of inv.payments?.transactions ?? []) {
         if (t.payment_date) paymentDates.set(inv.id, [...(paymentDates.get(inv.id) ?? []), t.payment_date]);
         if (!inRange(t.payment_date) || !t.amount) continue;
-        collected.set(t.amount.currency_code, (collected.get(t.amount.currency_code) ?? 0) + toCents(t.amount.value));
-        paymentCount++;
+        add(recordedAll, t.amount.currency_code, toCents(t.amount.value));
+        recordedCount++;
+        if (t.method !== "PAYPAL") { add(recordedOffPayPal, t.amount.currency_code, toCents(t.amount.value)); offPayPalCount++; }
+      }
+    }
+    const viaPayPal = new Map<string, number>();
+    if (received.state === "ok") for (const p of received.payments) add(viaPayPal, p.amount.currency, toCents(p.amount.value));
+    const collected = received.state === "ok"
+      ? new Map([...new Set([...viaPayPal.keys(), ...recordedOffPayPal.keys()])].map((c) => [c, (viaPayPal.get(c) ?? 0) + (recordedOffPayPal.get(c) ?? 0)]))
+      : recordedAll;
+    const paymentCount = received.state === "ok" ? received.payments.length + offPayPalCount : recordedCount;
+    // A payment PayPal lists for a Kairos invoice also counts toward "paid after a reminder".
+    if (received.state === "ok") {
+      for (const p of received.payments) {
+        const inv = invoices.find((x) => x.id === p.invoiceRef || (x.detail.invoice_number && x.detail.invoice_number === p.invoiceRef));
+        if (inv) paymentDates.set(inv.id, [...(paymentDates.get(inv.id) ?? []), p.localDate]);
       }
     }
     const invoiced = invoices.filter((inv) => !["DRAFT", "CANCELLED"].includes(inv.status) && inRange(inv.detail.invoice_date));
@@ -276,9 +337,15 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
         aging,
         money: {
           collectedInPeriod: asTotals(collected), paymentsInPeriod: paymentCount,
+          collectedBreakdown: received.state === "ok"
+            ? { source: "PayPal Transaction Search plus payments recorded by hand on invoices",
+                receivedViaPayPal: asTotals(viaPayPal), paypalPayments: received.payments.length,
+                recordedByHand: asTotals(recordedOffPayPal), handRecordedPayments: offPayPalCount,
+                paypalDataAsOf: received.dataAsOf ? local(received.dataAsOf) : null, paypalLagNote: LAG_NOTE }
+            : { source: "payments recorded on invoices only", transactionSearch: received.state, why: received.message },
           invoicedInPeriod: asTotals(invoicedTotals), invoicesIssuedInPeriod: invoiced.length,
           outstandingNow: sumDue(open), openInvoicesNow: open.length,
-          note: "Collected counts payments dated in the period (recorded payments included). Outstanding is today's open balance.",
+          note: "Collected counts payments dated in the period. Outstanding is today's open balance.",
         },
         topCustomersOwing: top,
         reminders: {
