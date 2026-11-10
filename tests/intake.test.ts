@@ -35,12 +35,12 @@ test("normalizers: money and quantity as written on paper", () => {
 });
 
 test("clean extraction: form filled, quantities normalized with a note, total matches, no errors", () => {
-  const { fill, findings, businessName } = checkExtraction(base());
+  const { fill, findings } = checkExtraction(base());
   assert.deepEqual(fill.items.map((i) => [i.quantity, i.unitAmount]), [["3", "150.00"], ["1", "1200.00"]]);
   assert.equal(fill.recipient.email, "maya@okafordental.com");
   assert.equal(fill.termType, "NET_15");
   assert.equal(fill.note, "Thanks for your business!");
-  assert.equal(businessName, "Okafor Family Dental");
+  assert.equal(fill.recipient.businessName, "Okafor Family Dental");
   assert.deepEqual(errorsOf(findings), []);
   assert.ok(findings.some((f) => f.field === "items[0].quantity" && f.severity === "warning"));
 });
@@ -101,6 +101,7 @@ test("field paths map from extraction names to form names", () => {
   assert.equal(mapField("customer.email"), "recipient.email");
   assert.equal(mapField("items[2].unitPrice"), "items[2].unitAmount");
   assert.equal(mapField("totalShown"), "total");
+  assert.equal(mapField("customer.businessName"), "recipient.businessName");
 });
 
 function stub(handlers: Record<string, (req: TransportRequest) => unknown>) {

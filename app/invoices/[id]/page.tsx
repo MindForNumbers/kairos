@@ -40,6 +40,7 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
           <div>
             <label>Bill to</label>
             <div>{recipientLabel(recipient)}</div>
+            {recipient?.billing_info?.business_name && <div>{recipient.billing_info.business_name}</div>}
             <div className="muted">{recipient?.billing_info?.email_address}</div>
           </div>
           <div>

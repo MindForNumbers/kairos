@@ -33,7 +33,7 @@ export function normalizeQuantity(raw: string | null | undefined): string | null
 const cents = (v: string) => Math.round(Number(v) * 100);
 const fmt = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export function checkExtraction(x: Extraction): { fill: FormFill; findings: Finding[]; businessName: string | null } {
+export function checkExtraction(x: Extraction): { fill: FormFill; findings: Finding[] } {
   const findings: Finding[] = [];
   const add = (field: string, severity: Finding["severity"], message: string) => findings.push({ field, severity, message, source: "code" });
 
@@ -43,8 +43,8 @@ export function checkExtraction(x: Extraction): { fill: FormFill; findings: Find
   else if (!EMAIL.test(email)) add("recipient.email", "error", `"${cleanUntrusted(x.customer.email, 80)}" isn't a valid email address.`);
   const givenName = cleanUntrusted(x.customer.givenName, 140) ?? "";
   const surname = cleanUntrusted(x.customer.surname, 140) ?? "";
-  if (!givenName && !surname) add("recipient.givenName", "warning", "No customer name found.");
-  const businessName = cleanUntrusted(x.customer.businessName, 140);
+  const businessName = cleanUntrusted(x.customer.businessName, 300) ?? "";
+  if (!givenName && !surname && !businessName) add("recipient.givenName", "warning", "No customer or business name found.");
 
   // ---- Items ----
   if (x.items.length === 0) add("items", "error", "No line items found. Add at least one.");
@@ -120,7 +120,7 @@ export function checkExtraction(x: Extraction): { fill: FormFill; findings: Find
     note = "";
   }
 
-  return { fill: { recipient: { email, givenName, surname }, items, currency, termType, note }, findings, businessName };
+  return { fill: { recipient: { email, givenName, surname, businessName }, items, currency, termType, note }, findings };
 }
 
 /** Image bytes → media type, by magic number (the client's claimed type is not trusted). */

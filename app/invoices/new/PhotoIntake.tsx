@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 export type FormFill = {
-  recipient: { email: string; givenName: string; surname: string };
+  recipient: { email: string; givenName: string; surname: string; businessName: string };
   items: { name: string; description: string; quantity: string; unitAmount: string; taxPercent: string }[];
   currency: string;
   termType: string;
   note: string;
 };
 export type Finding = { field: string; severity: "error" | "warning"; message: string; source: "code" | "review" | "extractor" };
-export type Filled = { fill: FormFill; findings: Finding[]; businessName: string | null; costUsd: number; via: "photo" | "voice" };
+export type Filled = { fill: FormFill; findings: Finding[]; costUsd: number; via: "photo" | "voice" };
 
 const MAX_EDGE = 2000;
 
@@ -62,7 +62,7 @@ export default function PhotoIntake({ onFilled, disabled }: { onFilled: (f: Fill
       const res = await fetch("/api/intake", { method: "POST", body, headers });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.message ?? "Couldn't read that. Try again, or fill the form by hand.");
-      onFilled({ fill: data.fill, findings: data.findings, businessName: data.businessName, costUsd: data.costUsd, via });
+      onFilled({ fill: data.fill, findings: data.findings, costUsd: data.costUsd, via });
     } catch (e) {
       setError((e as Error).message);
     } finally {

@@ -22,7 +22,7 @@ export type Invoice = {
     payment_term?: { term_type?: string; due_date?: string };
     metadata?: { create_time?: string; recipient_view_url?: string; invoicer_view_url?: string };
   };
-  primary_recipients?: { billing_info?: { email_address?: string; name?: { given_name?: string; surname?: string; full_name?: string } } }[];
+  primary_recipients?: { billing_info?: { email_address?: string; business_name?: string; name?: { given_name?: string; surname?: string; full_name?: string } } }[];
   items?: { name: string; description?: string; quantity: string; unit_amount: Money; tax?: { name: string; percent: string } }[];
   amount?: Money;
   due_amount?: Money;
@@ -42,6 +42,7 @@ export const createInvoiceSchema = z.object({
     email: z.email(),
     givenName: z.string().max(140).optional(),
     surname: z.string().max(140).optional(),
+    businessName: z.string().max(300).optional(),
   }),
   items: z.array(z.object({
     name: z.string().min(1).max(200),
@@ -95,6 +96,7 @@ export async function createDraftInvoice(input: CreateInvoiceInput): Promise<Inv
         name: input.recipient.givenName || input.recipient.surname
           ? { given_name: input.recipient.givenName, surname: input.recipient.surname }
           : undefined,
+        business_name: input.recipient.businessName || undefined,
       },
     }],
     items: input.items.map((it) => ({

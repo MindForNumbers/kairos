@@ -34,6 +34,7 @@ export default function InvoiceForm() {
   const [email, setEmail] = useState("");
   const [givenName, setGivenName] = useState("");
   const [surname, setSurname] = useState("");
+  const [businessName, setBusinessName] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [termType, setTermType] = useState<(typeof TERMS)[number]>("NET_30");
   const [note, setNote] = useState("");
@@ -61,6 +62,7 @@ export default function InvoiceForm() {
     setEmail(f.fill.recipient.email);
     setGivenName(f.fill.recipient.givenName);
     setSurname(f.fill.recipient.surname);
+    setBusinessName(f.fill.recipient.businessName);
     setItems(f.fill.items.length ? f.fill.items : [emptyItem()]);
     setCurrency(f.fill.currency);
     if ((TERMS as readonly string[]).includes(f.fill.termType)) setTermType(f.fill.termType as (typeof TERMS)[number]);
@@ -96,7 +98,7 @@ export default function InvoiceForm() {
           invoiceNumber: opt(invoiceNumber),
           termType,
           note: opt(note),
-          recipient: { email: email.trim(), givenName: opt(givenName), surname: opt(surname) },
+          recipient: { email: email.trim(), givenName: opt(givenName), surname: opt(surname), businessName: opt(businessName) },
           items: items.map((it) => ({
             name: it.name.trim(),
             description: opt(it.description),
@@ -132,7 +134,6 @@ export default function InvoiceForm() {
         <p style={{ marginTop: 0 }}>
           <strong>Filled from your {intake.via === "photo" ? "photo" : "voice note"}.</strong>{" "}
           {errorCount ? `${errorCount} field${errorCount === 1 ? "" : "s"} need${errorCount === 1 ? "s" : ""} fixing before you create it.` : findings.length ? "Check the notes below, then review the form." : "Everything checked out; still review the form."}
-          {intake.businessName && <> Business on the photo: {intake.businessName} (not part of the invoice form).</>}
         </p>
         {findings.length > 0 && (
           <ul className="findings">
@@ -153,6 +154,9 @@ export default function InvoiceForm() {
         <div className="field"><label>Email *</label><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} {...flag("recipient.email")} /></div>
         <div className="field"><label>First name</label><input value={givenName} onChange={(e) => setGivenName(e.target.value)} {...flag("recipient.givenName")} /></div>
         <div className="field"><label>Last name</label><input value={surname} onChange={(e) => setSurname(e.target.value)} {...flag("recipient.givenName")} /></div>
+      </div>
+      <div className="row">
+        <div className="field"><label>Business name</label><input value={businessName} maxLength={300} onChange={(e) => setBusinessName(e.target.value)} {...flag("recipient.businessName")} /></div>
       </div>
 
       <h2>Line items</h2>

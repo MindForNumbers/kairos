@@ -81,7 +81,7 @@ export async function runIntake(input: IntakeInput, actor: string): Promise<Inta
   }
 
   // 2. Code checks (deterministic; these always run).
-  const { fill, findings, businessName } = checkExtraction(x);
+  const { fill, findings } = checkExtraction(x);
   for (const u of x.uncertain) findings.push({ field: mapField(u.field), severity: "warning", message: `Hard to read: ${u.why}`, source: "extractor" });
 
   // 3. Review (Haiku 5.5). A failed review doesn't block the fill, but the owner is told.
@@ -100,14 +100,13 @@ export async function runIntake(input: IntakeInput, actor: string): Promise<Inta
     findings.push({ field: "input", severity: "warning", message: "The second check couldn't run; review every field yourself.", source: "code" });
   }
 
-  return finish({ ok: true, fill, findings: sortFindings(findings), businessName, costUsd: budget.spentUsd(), models: { extractor, reviewer: reviewed } });
+  return finish({ ok: true, fill, findings: sortFindings(findings), costUsd: budget.spentUsd(), models: { extractor, reviewer: reviewed } });
 }
 
 /** Extraction paths → form paths (customer.email → recipient.email, unitPrice → unitAmount). */
 export function mapField(path: string): string {
   return path.trim()
-    .replace(/^customer\.(email|givenName|surname)$/, "recipient.$1")
-    .replace(/^customer\.businessName$/, "recipient.businessName")
+    .replace(/^customer\.(email|givenName|surname|businessName)$/, "recipient.$1")
     .replace(/\.(unitPrice|lineTotal)$/, ".unitAmount")
     .replace(/^totalShown$/, "total")
     .replace(/^paymentTerms$/, "termType");

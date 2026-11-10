@@ -58,7 +58,7 @@ export type RunReport = {
   models: { drafter: string[]; critic: string[] };
   cost: { totalUsd: number; byPurpose: Record<string, { calls: number; costUsd: number; inputTokens: number; outputTokens: number }>; caps: { runUsd: number; dailyUsd: number } };
   /** Set when a spend cap stopped the run. Unreviewed drafts were blocked. */
-  halted: { cap: "run" | "daily" | "chat_turn"; message: string } | null;
+  halted: { cap: CostCapError["cap"]; message: string } | null;
   /** Rules fingerprint every proposal in this run was stamped with. */
   rulesVersion: string;
 };

@@ -55,7 +55,7 @@ export type Review = z.infer<typeof ReviewSchema>;
 
 /** Values for the New Invoice form. Strings, as the form holds them. */
 export type FormFill = {
-  recipient: { email: string; givenName: string; surname: string };
+  recipient: { email: string; givenName: string; surname: string; businessName: string };
   items: { name: string; description: string; quantity: string; unitAmount: string; taxPercent: string }[];
   currency: string;
   termType: Term;
@@ -71,5 +71,5 @@ export type Finding = {
 };
 
 export type IntakeResult =
-  | { ok: true; fill: FormFill; findings: Finding[]; businessName: string | null; costUsd: number; models: { extractor: string; reviewer: string | null } }
+  | { ok: true; fill: FormFill; findings: Finding[]; costUsd: number; models: { extractor: string; reviewer: string | null } }
   | { ok: false; reason: "not_billable" | "model_failed"; message: string; costUsd: number };
