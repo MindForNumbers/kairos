@@ -200,3 +200,8 @@ main:has(.with-assistant) { max-width: 1400px; }
 .finding-field { font-weight: 600; }
 input.flag-error, textarea.flag-error { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
 input.flag-warn, textarea.flag-warn { border-color: var(--warn); }
+
+/* ---- Kairos briefing ---- */
+.kp-briefing-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.25rem; }
+.kp-briefing p:not(.kp-briefing-label) { white-space: pre-line; }
+a.kp-chip { text-decoration: none; display: inline-block; }

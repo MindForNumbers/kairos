@@ -140,6 +140,9 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
       period: { type: "string", enum: ["today", "last_7_days", "last_30_days", "all"] },
       limit: { type: "integer", description: "1 to 50." },
     }) },
+  { name: "get_report", strict: true,
+    description: "Business report for a period: aging of open invoices (current / 1-30 / 31-60 / 61+ days past due), money collected in the period vs invoiced in the period vs outstanding now, top customers owing, and reminder activity (sent in the period, waiting for approval, needing a human, and invoices paid after a reminder). Use for 'summary of this month', 'aging report', 'how are collections going'.",
+    input_schema: obj({ period: { type: "string", enum: ["this_month", "last_month", "last_30_days", "year_to_date"] } }) },
   { name: "get_queue", strict: true,
     description: "The Approvals page right now: reminder drafts awaiting approval, and items that need a human (blocked or escalated) with the reason.",
     input_schema: obj({}) },
@@ -207,6 +210,92 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
         }),
       },
       untrusted: { customerNames: Object.fromEntries(shown.map((l) => { const inv = byId.get(l.invoiceId); return [l.invoiceId, inv ? nameOf(inv) : null]; })) },
+    };
+  },
+
+  async get_report(i, ctx) {
+    const { invoices, truncated } = await ctx.listAll();
+    const today = ctx.today;
+    const period = String(i.period);
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const range = period === "last_month"
+      ? { from: `${addDays(monthStart, -1).slice(0, 7)}-01`, to: addDays(monthStart, -1) }
+      : period === "last_30_days" ? { from: addDays(today, -29), to: today }
+      : period === "year_to_date" ? { from: `${today.slice(0, 4)}-01-01`, to: today }
+      : { from: monthStart, to: today };
+    const inRange = (d: string | null | undefined) => !!d && d >= range.from && d <= range.to;
+
+    // Aging of open invoices (same overdue rule as the home tiles and the agent).
+    const open = invoices.filter(isOpen);
+    const bucketOf = (inv: Invoice) => { const d = daysOverdue(inv, today); return d === 0 ? "current" : d <= 30 ? "1-30" : d <= 60 ? "31-60" : "61+"; };
+    const aging = ["current", "1-30", "31-60", "61+"].map((b) => {
+      const invs = open.filter((inv) => bucketOf(inv) === b);
+      return { bucket: b === "current" ? "current (not yet due)" : `${b} days past due`, invoices: invs.length, due: sumDue(invs), invoiceNumbers: invs.map((x) => x.detail.invoice_number ?? x.id) };
+    });
+
+    // Collected in the period: list results carry paid_amount but no dates, so fetch full records of paid ones.
+    const withPayments = invoices.filter((inv) => toCents(inv.payments?.paid_amount?.value) > 0).slice(0, 40);
+    const full = await Promise.all(withPayments.map((inv) => fetchInvoice(inv.id).catch(() => null)));
+    const collected = new Map<string, number>();
+    const paymentDates = new Map<string, string[]>();
+    let paymentCount = 0;
+    for (const inv of full) {
+      if (!inv) continue;
+      for (const t of inv.payments?.transactions ?? []) {
+        if (t.payment_date) paymentDates.set(inv.id, [...(paymentDates.get(inv.id) ?? []), t.payment_date]);
+        if (!inRange(t.payment_date) || !t.amount) continue;
+        collected.set(t.amount.currency_code, (collected.get(t.amount.currency_code) ?? 0) + toCents(t.amount.value));
+        paymentCount++;
+      }
+    }
+    const invoiced = invoices.filter((inv) => !["DRAFT", "CANCELLED"].includes(inv.status) && inRange(inv.detail.invoice_date));
+    const invoicedTotals = new Map<string, number>();
+    for (const inv of invoiced) if (inv.amount) invoicedTotals.set(inv.amount.currency_code, (invoicedTotals.get(inv.amount.currency_code) ?? 0) + toCents(inv.amount.value));
+    const asTotals = (m: Map<string, number>) => [...m].map(([currency, c]) => money(currency, fromCents(c)));
+
+    // Top customers owing.
+    const by = new Map<string, Invoice[]>();
+    for (const inv of open) { const k = recipientEmail(inv) ?? "(no email)"; by.set(k, [...(by.get(k) ?? []), inv]); }
+    const top = [...by].map(([email, invs]) => ({ customerEmail: email, owes: sumDue(invs), openInvoices: invs.length, oldestOverdueDays: Math.max(0, ...invs.map((x) => daysOverdue(x, today))) }))
+      .sort((a, b) => toCents(b.owes[0]?.value) - toCents(a.owes[0]?.value)).slice(0, 5);
+
+    // Reminder activity.
+    const store = getStore();
+    const ledger = (await store.listLedger({ limit: 500 })).filter((l) => inRange(localDate(new Date(l.sentAt))));
+    const [waiting, human] = await Promise.all([store.listProposals({ status: ["passed", "approved"] }), store.listProposals({ status: ["blocked", "escalated"] })]);
+    const byId = new Map(invoices.map((inv) => [inv.id, inv]));
+    const sentIds = [...new Set(ledger.map((l) => l.invoiceId))];
+    const paidAfter = sentIds.filter((id) => {
+      const firstSend = ledger.filter((l) => l.invoiceId === id).map((l) => localDate(new Date(l.sentAt))).sort()[0];
+      return (paymentDates.get(id) ?? []).some((d) => d >= firstSend);
+    });
+
+    return {
+      data: {
+        today, period: { name: period, from: range.from, to: range.to },
+        aging,
+        money: {
+          collectedInPeriod: asTotals(collected), paymentsInPeriod: paymentCount,
+          invoicedInPeriod: asTotals(invoicedTotals), invoicesIssuedInPeriod: invoiced.length,
+          outstandingNow: sumDue(open), openInvoicesNow: open.length,
+          note: "Collected counts payments dated in the period (recorded payments included). Outstanding is today's open balance.",
+        },
+        topCustomersOwing: top,
+        reminders: {
+          sentInPeriod: ledger.length,
+          sentByAgent: ledger.filter((l) => l.source === "agent").length,
+          sentManually: ledger.filter((l) => l.source === "manual").length,
+          waitingForApproval: waiting.length,
+          needingHuman: human.filter((p) => !p.resolution).length,
+          invoicesReminded: sentIds.length,
+          remindedInvoicesPaidSince: paidAfter.length,
+          remindedInvoicesPaidSinceNumbers: paidAfter.map((id) => byId.get(id)?.detail.invoice_number ?? id),
+          paidAfterReminderSummary: sentIds.length === 0
+            ? "No reminders were sent in this period."
+            : `${paidAfter.length} of the ${sentIds.length} invoice${sentIds.length === 1 ? "" : "s"} reminded in this period ${paidAfter.length === 1 ? "has" : "have"} received a payment since the reminder.`,
+        },
+        truncated,
+      },
     };
   },
 

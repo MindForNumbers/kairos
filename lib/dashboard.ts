@@ -10,6 +10,8 @@ export type Dashboard = {
   overdue: { count: number; oldestDays: number | null };
   queue: { awaitingApproval: number; needsHuman: number };
   recent: Invoice[];
+  /** Every invoice listed (for the Kairos briefing's most-urgent pick). */
+  invoices: Invoice[];
   truncated: boolean;
   today: string;
 };
@@ -33,6 +35,7 @@ export async function loadDashboard(): Promise<Dashboard> {
     overdue: { count: s.overdueCount, oldestDays: s.oldestOverdueDays },
     queue: { awaitingApproval, needsHuman },
     recent: [...all].sort((a, b) => createdAt(b).localeCompare(createdAt(a))).slice(0, RECENT),
+    invoices: all,
     truncated,
     today,
   };

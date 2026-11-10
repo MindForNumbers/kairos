@@ -4,7 +4,7 @@ Invoicing and collections for a small business on PayPal (sandbox). Built on the
 
 - **Invoices**: create, send, record payments, cancel (`/invoices`).
 - **Collections agent**: finds overdue invoices, drafts reminders, and checks each draft with a second model plus code checks. Drafts wait on **Approvals** (`/approvals`) and nothing is sent until the owner approves. Invoices more than 60 days overdue go to a human.
-- **Kairos chat**: a read-only assistant docked on every page. It answers questions about invoices, customers, the queue and sent reminders, and can request drafts, which still go to Approvals.
+- **Kairos chat**: a read-only assistant docked on every page. It answers questions about invoices, customers, the queue and sent reminders, and can request drafts, which still go to Approvals. On an empty conversation it opens with a briefing. Its numbers are computed in code from the same data as the home tiles; Haiku only phrases a template, cached per shape and regenerated at most once an hour. `get_report` gives aging, collected vs outstanding, top customers owing and reminder activity for a period.
 - **Invoice from a photo or voice note**: on **New invoice**, snap a job note or dictate one (Chrome). Kairos fills in the form, and the owner checks it and clicks Create.
 
 ## Run it

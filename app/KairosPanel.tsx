@@ -18,6 +18,8 @@ type Item =
   | { kind: "error"; text: string };
 
 type Outcome = { invoiceNumber: string | null; outcome: string };
+type BriefingChip = { label: string; ask?: string; href?: string };
+type Briefing = { text: string; chips: BriefingChip[] };
 
 const SESSION_KEY = "kairos.chat.session";
 const readSession = () => { try { return localStorage.getItem(SESSION_KEY); } catch { return null; } };
@@ -61,6 +63,7 @@ export default function KairosPanel({ invoiceId = null, invoiceNumber = null }: 
   const sessionId = useRef<string | null>(null);
   const router = useRouter();
   const listRef = useRef<HTMLDivElement>(null);
+  const [briefing, setBriefing] = useState<Briefing | null | "loading" | "failed">(null);
 
   // Restore the conversation across pages (per-browser convenience; the server owns the transcript).
   useEffect(() => {
@@ -77,6 +80,19 @@ export default function KairosPanel({ invoiceId = null, invoiceNumber = null }: 
       })
       .catch(() => {});
   }, []);
+
+  // Empty conversation: show the briefing (numbers from code; the server caches the wording).
+  const empty = items.length === 0;
+  useEffect(() => {
+    if (!empty) return;
+    let cancelled = false;
+    setBriefing("loading");
+    fetch("/api/chat/briefing")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((b: Briefing) => { if (!cancelled) setBriefing(b); })
+      .catch(() => { if (!cancelled) setBriefing("failed"); });
+    return () => { cancelled = true; };
+  }, [empty]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
@@ -148,7 +164,19 @@ export default function KairosPanel({ invoiceId = null, invoiceNumber = null }: 
         </header>
 
         <div className="kp-list" ref={listRef} aria-live="polite">
-          {items.length === 0 && (
+          {items.length === 0 && briefing && typeof briefing === "object" && (
+            <div className="kp-welcome kp-briefing">
+              <p className="kp-briefing-label">Today&apos;s briefing</p>
+              <p>{briefing.text}</p>
+              <div className="kp-chips">
+                {briefing.chips.map((c) => c.href
+                  ? <Link key={c.label} href={c.href} className="kp-chip">{c.label}</Link>
+                  : <button key={c.label} className="kp-chip" onClick={() => send(c.ask ?? c.label)} disabled={busy}>{c.label}</button>)}
+              </div>
+            </div>
+          )}
+          {items.length === 0 && briefing === "loading" && <div className="kp-activity running"><span className="dot" aria-hidden />Catching up on your invoices…</div>}
+          {items.length === 0 && (briefing === "failed" || briefing === null) && (
             <div className="kp-welcome">
               <p>Hi, I&apos;m Kairos. Ask me about your invoices: who owes you, what&apos;s overdue, or what happened to a reminder. I can draft reminders for you to approve.</p>
               <div className="kp-chips">

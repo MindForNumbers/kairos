@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import type Anthropic from "@anthropic-ai/sdk";
-import { setChatTransportForTesting, type ChatRequest, type ChatResponse } from "../lib/llm/client";
+import { setChatTransportForTesting, setTransportForTesting, type ChatRequest, type ChatResponse } from "../lib/llm/client";
+import { setClockForTesting } from "../lib/clock";
 import { setPaypalReadsForTesting } from "../lib/agent/paypal-read";
 import type { Invoice } from "../lib/paypal/invoices";
 import { chatTurn, formatToolResult, MAX_CALLS, transcript } from "../lib/chat/engine";
@@ -80,7 +81,7 @@ afterEach(() => {
 
 test("tool allowlist: read-only tools plus exactly one draft-request action", () => {
   assert.deepEqual([...TOOL_NAMES].sort(), [
-    "customer_history", "customers_owing", "get_invoice", "get_queue", "get_summary", "list_invoices",
+    "customer_history", "customers_owing", "get_invoice", "get_queue", "get_report", "get_summary", "list_invoices",
     "preview_overdue", "recent_sends", "reminder_history", "request_reminder_proposals",
   ]);
 });
@@ -250,4 +251,81 @@ test("streaming events: text chunks, tool start/done, draft outcomes, in order",
   assert.deepEqual(ev, ["text", "start:Drafting reminders for DEMO-05", "proposals:DEMO-05=passed", "done:true", "text"]);
   assert.equal(streamed, "Let me draft those.DEMO-05 is waiting in Approvals.");
   assert.equal(r.reply, "DEMO-05 is waiting in Approvals.");
+});
+
+test("get_report: aging buckets cover every open invoice; collected uses payment dates in the period; paid-after-reminder from the ledger", async () => {
+  const invs = fixtureInvoices();
+  const paid02 = invs.find((x) => x.id === "INV2-PAID-02")!;
+  // A reminder for DEMO-02 sent before its payment on 2026-11-02.
+  setClockForTesting("2026-11-01T18:00:00Z");
+  await store.recordManualSend({ invoiceId: paid02.id, subject: "s", note: "n", actor: "user:admin" });
+  setClockForTesting("2026-11-08T20:00:00Z");
+  const r = (await runTool("get_report", { period: "this_month" }, new ToolContext())).data as {
+    period: { from: string; to: string }; aging: { invoices: number }[];
+    money: { collectedInPeriod: string[]; paymentsInPeriod: number; openInvoicesNow: number };
+    reminders: { sentInPeriod: number; remindedInvoicesPaidSinceNumbers: string[]; paidAfterReminderSummary: string };
+  };
+  assert.deepEqual(r.period, { name: "this_month", from: "2026-11-01", to: "2026-11-08" } as unknown as typeof r.period);
+  assert.equal(r.aging.reduce((n, b) => n + b.invoices, 0), r.money.openInvoicesNow);
+  assert.deepEqual(r.money.collectedInPeriod, ["480.00 USD"], "only the Nov 2 payment is in this month");
+  assert.equal(r.money.paymentsInPeriod, 1);
+  assert.equal(r.reminders.sentInPeriod, 1);
+  assert.deepEqual(r.reminders.remindedInvoicesPaidSinceNumbers, ["DEMO-02"]);
+  assert.equal(r.reminders.paidAfterReminderSummary, "1 of the 1 invoice reminded in this period has received a payment since the reminder.");
+});
+
+test("briefing: facts come from the dashboard numbers; template has no digits and fills every count from code", async () => {
+  const { factsFrom, validTemplate, render, codeTemplate, chipsFor } = await import("../lib/chat/briefing");
+  const { stats } = await import("../lib/invoice-stats");
+  const invs = fixtureInvoices();
+  const s = stats(invs, "2026-11-08");
+  const d = { unpaid: s.unpaid, overdue: { count: s.overdueCount, oldestDays: s.oldestOverdueDays }, queue: { awaitingApproval: 0, needsHuman: 0 }, recent: [], invoices: invs, truncated: false, today: "2026-11-08" };
+  const f = factsFrom(d, [], 2);
+  assert.equal(f.overdueCount, s.overdueCount);
+  assert.equal(f.openCount, s.openCount);
+  assert.equal(f.sentToday, 2);
+  assert.equal(f.urgent?.kind, "overdue");
+  assert.equal(f.urgent?.daysOverdue, s.oldestOverdueDays);
+
+  const t = codeTemplate(f);
+  assert.ok(validTemplate(t, f));
+  const out = render(t, f);
+  assert.match(out, new RegExp(`${s.overdueCount} invoices are overdue`));
+  assert.match(out, /2 reminders went out today/);
+  assert.ok(!/\{/.test(out));
+
+  assert.equal(validTemplate("You have 3 overdue. {unpaid}", f), false, "digits rejected");
+  assert.equal(validTemplate(t.replace("{remindersSentToday}", "some reminders"), f), false, "required placeholder missing");
+  assert.equal(validTemplate(`${t} {secretValue}`, f), false, "unknown placeholder");
+  assert.ok(chipsFor(f).length <= 3);
+  assert.ok(chipsFor(f).some((c) => c.ask === `What should I do about ${f.urgent!.invoiceNumber}?`));
+});
+
+test("briefing wording: one model call per shape, reused with fresh numbers; other shapes within the hour use code wording", async () => {
+  const { factsFrom, templateFor, resetBriefingCacheForTesting, codeTemplate } = await import("../lib/chat/briefing");
+  const { stats } = await import("../lib/invoice-stats");
+  resetBriefingCacheForTesting();
+  const invs = fixtureInvoices();
+  const s = stats(invs, "2026-11-08");
+  const dash = (awaiting: number) => ({ unpaid: s.unpaid, overdue: { count: s.overdueCount, oldestDays: s.oldestOverdueDays }, queue: { awaitingApproval: awaiting, needsHuman: 0 }, recent: [], invoices: invs, truncated: false, today: "2026-11-08" });
+  let calls = 0;
+  setTransportForTesting(async (req) => {
+    assert.equal(req.purpose, "briefing");
+    assert.doesNotMatch(req.user, /\d{2,}|Taylor|DEMO-/, "the model sees no numbers or customer text");
+    calls++;
+    const f0 = factsFrom(dash(2), [], 0);
+    return { model: req.model, requestId: "r", stopReason: "end_turn", refusalCategory: null,
+      usage: { inputTokens: 500, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      text: JSON.stringify({ template: `Quick catch-up: ${codeTemplate(f0)}` }) };
+  });
+  const a = await templateFor(factsFrom(dash(2), [], 0));
+  const b = await templateFor(factsFrom(dash(5), [], 0)); // same shape ("many"), different number
+  assert.equal(a.wording, "model");
+  assert.equal(b.template, a.template);
+  assert.equal(calls, 1);
+  const c = await templateFor(factsFrom(dash(1), [], 0)); // new shape ("one") within the hour
+  assert.equal(c.wording, "code");
+  assert.equal(calls, 1);
+  const spent = await store.modelSpendSince(new Date("2026-11-08T00:00:00Z"));
+  assert.ok(spent > 0, "the briefing call is recorded against the daily cap");
 });
