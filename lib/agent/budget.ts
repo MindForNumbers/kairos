@@ -8,11 +8,12 @@ import type { CallMeta, SpendGuard } from "@/lib/llm/client";
  * max_tokens, generous prompt estimate) before it is made, so a cap is never exceeded.
  *   KAIROS_RUN_COST_CAP    USD per agent run (default 0.50)
  *   KAIROS_DAILY_COST_CAP  USD per business-timezone day, across all runs (default 5.00)
+ *   KAIROS_INTAKE_COST_CAP USD per invoice-from-photo/voice extraction (default 0.15)
  */
 
 export class CostCapError extends Error {
-  constructor(public cap: "run" | "daily" | "chat_turn", public spentUsd: number, public capUsd: number, public nextMaxUsd: number, public purpose: string) {
-    super(`${cap === "run" ? "Run" : cap === "chat_turn" ? "Chat message" : "Daily"} cost cap $${capUsd.toFixed(2)} would be exceeded: spent $${spentUsd.toFixed(4)}, next ${purpose} call could cost up to $${nextMaxUsd.toFixed(4)}`);
+  constructor(public cap: "run" | "daily" | "chat_turn" | "intake", public spentUsd: number, public capUsd: number, public nextMaxUsd: number, public purpose: string) {
+    super(`${cap === "run" ? "Run" : cap === "chat_turn" ? "Chat message" : cap === "intake" ? "Invoice-from-photo" : "Daily"} cost cap $${capUsd.toFixed(2)} would be exceeded: spent $${spentUsd.toFixed(4)}, next ${purpose} call could cost up to $${nextMaxUsd.toFixed(4)}`);
     this.name = "CostCapError";
   }
 }
@@ -30,6 +31,7 @@ export function costCaps() {
     runUsd: capFromEnv("KAIROS_RUN_COST_CAP", 0.5),
     dailyUsd: capFromEnv("KAIROS_DAILY_COST_CAP", 5),
     chatTurnUsd: capFromEnv("KAIROS_CHAT_TURN_COST_CAP", 0.05),
+    intakeUsd: capFromEnv("KAIROS_INTAKE_COST_CAP", 0.15),
   };
 }
 
@@ -84,6 +86,35 @@ export function createChatTurnBudget(sessionId: string): Budget {
       else if (daily + maxCostUsd > caps.dailyUsd) err = new CostCapError("daily", daily, caps.dailyUsd, maxCostUsd, purpose);
       if (err) {
         await store.audit({ actor: "system", event: "budget.halt", entityType: "chat_session", entityId: sessionId,
+          data: { cap: err.cap, capUsd: err.capUsd, spentUsd: err.spentUsd, nextMaxUsd: maxCostUsd, model, purpose } });
+        throw err;
+      }
+    },
+    async afterCall(meta: CallMeta) {
+      spent += meta.costUsd;
+      await store.recordModelCall({
+        runId: null, purpose: meta.purpose, model: meta.model, requestId: meta.requestId,
+        inputTokens: meta.inputTokens, outputTokens: meta.outputTokens,
+        cacheReadTokens: meta.cacheReadTokens, cacheWriteTokens: meta.cacheWriteTokens, costUsd: meta.costUsd,
+      });
+    },
+  };
+}
+
+/** One budget per photo/voice intake (extract + review): KAIROS_INTAKE_COST_CAP plus the shared daily cap. */
+export function createIntakeBudget(intakeId: string): Budget {
+  const store = getStore();
+  const caps = costCaps();
+  let spent = 0;
+  return {
+    spentUsd: () => spent,
+    async beforeCall(model, maxCostUsd, purpose) {
+      const daily = await store.modelSpendSince(startOfLocalDay());
+      let err: CostCapError | null = null;
+      if (spent + maxCostUsd > caps.intakeUsd) err = new CostCapError("intake", spent, caps.intakeUsd, maxCostUsd, purpose);
+      else if (daily + maxCostUsd > caps.dailyUsd) err = new CostCapError("daily", daily, caps.dailyUsd, maxCostUsd, purpose);
+      if (err) {
+        await store.audit({ actor: "system", event: "budget.halt", entityType: "intake", entityId: intakeId,
           data: { cap: err.cap, capUsd: err.capUsd, spentUsd: err.spentUsd, nextMaxUsd: maxCostUsd, model, purpose } });
         throw err;
       }

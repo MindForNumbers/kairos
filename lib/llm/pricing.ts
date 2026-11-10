@@ -38,10 +38,17 @@ export function costOf(model: string, u: Usage): number {
 }
 
 /**
- * Upper bound for a call before it runs: prompt tokens over-estimated at 1 token per
- * 2.5 characters, and output at the full max_tokens.
+ * Generous per-image token ceiling for the worst-case estimate. Images are billed at about
+ * width*height/750 tokens after the API downsizes them; the browser sends at most 2000 px on
+ * the long side, so a real image stays well below this.
  */
-export function maxCostOf(model: string, promptChars: number, maxTokens: number): number {
-  const inputTokens = Math.ceil(promptChars / 2.5);
+export const IMAGE_TOKENS_MAX = 6_000;
+
+/**
+ * Upper bound for a call before it runs: prompt tokens over-estimated at 1 token per
+ * 2.5 characters, each image at IMAGE_TOKENS_MAX, and output at the full max_tokens.
+ */
+export function maxCostOf(model: string, promptChars: number, maxTokens: number, images = 0): number {
+  const inputTokens = Math.ceil(promptChars / 2.5) + images * IMAGE_TOKENS_MAX;
   return costOf(model, { inputTokens, outputTokens: maxTokens, cacheReadTokens: 0, cacheWriteTokens: 0 });
 }

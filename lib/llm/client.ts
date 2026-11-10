@@ -31,6 +31,8 @@ export type StructuredCall<S extends z.ZodType> = {
   system: string;
   /** The single user turn. Every call is one-shot: fresh context, no history. */
   user: string;
+  /** Images placed before the user text (base64, already size-checked by the caller). */
+  images?: ImageInput[];
   schema: S;
   /** Defaults to MODEL (the drafter's model). */
   model?: string;
@@ -39,6 +41,8 @@ export type StructuredCall<S extends z.ZodType> = {
   /** Spend guard: checked with a worst-case estimate BEFORE the call, recorded AFTER. */
   budget?: SpendGuard;
 };
+
+export type ImageInput = { mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string };
 
 export type SpendGuard = {
   /** Throw to stop the call (e.g. a cost cap would be exceeded). */
@@ -69,7 +73,7 @@ export type StructuredResult<T> =
 // ---- Transport: the only code that talks to the API. Tests replace it. ------------
 
 export type TransportRequest = {
-  purpose: string; model: string; system: string; user: string; maxTokens: number; effort: Effort; schema: z.ZodType;
+  purpose: string; model: string; system: string; user: string; images?: ImageInput[]; maxTokens: number; effort: Effort; schema: z.ZodType;
 };
 export type TransportResponse = {
   model: string;
@@ -90,7 +94,15 @@ const anthropicTransport: Transport = async (req) => {
       model: req.model,
       max_tokens: req.maxTokens,
       system: req.system,
-      messages: [{ role: "user", content: req.user }],
+      messages: [{
+        role: "user",
+        content: req.images?.length
+          ? [
+              ...req.images.map((im) => ({ type: "image" as const, source: { type: "base64" as const, media_type: im.mediaType, data: im.data } })),
+              { type: "text" as const, text: req.user },
+            ]
+          : req.user,
+      }],
       output_config: { effort: req.effort, format: zodOutputFormat(req.schema) },
     })
     .withResponse();
@@ -125,10 +137,11 @@ export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S
   const model = call.model ?? MODEL;
   const maxTokens = call.maxTokens ?? 16_000;
   assertPriced(model);
-  await call.budget?.beforeCall(model, maxCostOf(model, call.system.length + call.user.length, maxTokens), call.purpose);
+  const images = call.images ?? [];
+  await call.budget?.beforeCall(model, maxCostOf(model, call.system.length + call.user.length, maxTokens, images.length), call.purpose);
 
   const started = Date.now(); // real-clock: measures latency
-  const res = await transport({ purpose: call.purpose, model, system: call.system, user: call.user, maxTokens, effort: call.effort ?? "medium", schema: call.schema });
+  const res = await transport({ purpose: call.purpose, model, system: call.system, user: call.user, images: images.length ? images : undefined, maxTokens, effort: call.effort ?? "medium", schema: call.schema });
 
   const meta: CallMeta = {
     purpose: call.purpose,
@@ -137,7 +150,7 @@ export async function structuredCall<S extends z.ZodType>(call: StructuredCall<S
     stopReason: res.stopReason,
     ...res.usage,
     costUsd: costOf(res.model, res.usage),
-    promptHash: createHash("sha256").update(call.system).update("\0").update(call.user).digest("hex"),
+    promptHash: images.reduce((h, im) => h.update("\0").update(im.data), createHash("sha256").update(call.system).update("\0").update(call.user)).digest("hex"),
     durationMs: Date.now() - started, // real-clock
   };
   await call.budget?.afterCall(meta);

@@ -189,3 +189,14 @@ main:has(.with-assistant) { max-width: 1400px; }
   .kp-close { display: block; }
   .kp-scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, .35); }
 }
+
+/* ---- Invoice from photo / voice ---- */
+.intake .button.disabled { opacity: 0.6; pointer-events: none; }
+.intake-preview { display: block; max-width: 220px; max-height: 220px; margin-top: 0.75rem; border-radius: 8px; border: 1px solid var(--border); object-fit: contain; }
+.intake-findings.has-errors { border-color: var(--danger); }
+.findings { margin: 0.5rem 0; padding-left: 1.1rem; }
+.findings li { margin: 0.25rem 0; }
+.findings li.error { color: var(--danger); }
+.finding-field { font-weight: 600; }
+input.flag-error, textarea.flag-error { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+input.flag-warn, textarea.flag-warn { border-color: var(--warn); }

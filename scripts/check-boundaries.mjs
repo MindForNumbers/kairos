@@ -68,6 +68,11 @@ const rules = [
     forbid: /lib\/(queue|executor)\b|from\s+["']@\/lib\/paypal\/|\bfetch\(|["'`]\/api\/|\.(createApproval|claimApproval|releaseApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|finishRun)\(|\b(approveProposal|approveAndExecute|rejectProposal|executeApproval|sendManualReminder|triggerRun|setPaypalReadsForTesting)\b/,
   },
   {
+    name: "lib/intake/ only reads input and fills a form: no PayPal, queue, executor, HTTP, file writes or store writes (beyond its budget's model_calls and audit)",
+    applies: (f) => f.startsWith("lib/intake/") || f.startsWith("app/api/intake/"),
+    forbid: /lib\/(paypal|queue|executor)\b|paypal-read|\bfetch\(|["'`]\/api\/|from\s+["']node:(fs|fs\/promises|http|https|net)["']|\.(createApproval|claimApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|appendChatMessage)\(|\b(writeFile|createWriteStream)\b/,
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,
