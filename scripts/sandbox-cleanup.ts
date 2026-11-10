@@ -1,11 +1,17 @@
 // Reset the sandbox to a single demo set: cancel (or delete, if draft) every invoice whose
 // number doesn't start with "<KEEP>-". Paid/cancelled/refunded invoices can't be cancelled
-// and are only reported. Recipients are NOT emailed.
+// and are only reported. Recipients are NOT emailed. Open proposals (in review, awaiting
+// approval, approved, or needing a human) for invoices that end up cancelled are closed as
+// "skipped" / dismissed so the Approvals page only shows the kept set.
 //   npm run sandbox:cleanup                 # dry run, keeps DEMO-*
 //   npm run sandbox:cleanup -- --apply      # do it
 //   npm run sandbox:cleanup -- --keep=SEED  # keep a different prefix
 import { paypalRequest } from "../lib/paypal/client";
 import { listInvoices, type Invoice } from "../lib/paypal/invoices";
+import { getStore, type ProposalStatus } from "../lib/db";
+
+const OPEN: ProposalStatus[] = ["pending_review", "passed", "approved"];
+const NEEDS_HUMAN: ProposalStatus[] = ["blocked", "escalated"];
 
 // PayPal refuses to cancel PARTIALLY_PAID invoices (CANNOT_CANCEL_PAID_INVOICE), verified in sandbox.
 const CANCELLABLE = new Set(["SENT", "UNPAID", "SCHEDULED", "PAYMENT_PENDING"]);
@@ -28,7 +34,8 @@ async function main() {
 
   const invoices = await listAll();
   console.log(`${apply ? "APPLY" : "DRY RUN"}: keeping ${keep}-*, ${invoices.length} invoices listed\n`);
-  const counts = { kept: 0, cancelled: 0, deleted: 0, left: 0, failed: 0 };
+  const counts = { kept: 0, cancelled: 0, deleted: 0, left: 0, failed: 0, proposalsClosed: 0 };
+  const gone: Invoice[] = []; // not kept and (now) cancelled or deleted
 
   for (const inv of invoices) {
     const num = inv.detail.invoice_number ?? "—";
@@ -36,9 +43,10 @@ async function main() {
     const tag = `${num.padEnd(14)} ${inv.id}  ${inv.status.padEnd(15)} ${to}`;
     if (num.startsWith(`${keep}-`)) { counts.kept++; console.log(`  keep    ${tag}`); continue; }
 
+    if (inv.status === "CANCELLED") gone.push(inv);
     const action = inv.status === "DRAFT" ? "delete" : CANCELLABLE.has(inv.status) ? "cancel" : null;
     if (!action) { counts.left++; console.log(`  leave   ${tag}  (${inv.status} can't be cancelled${inv.status === "PARTIALLY_PAID" ? "; record the remaining payment to close it" : ""})`); continue; }
-    if (!apply) { console.log(`  ${action.padEnd(7)} ${tag}`); continue; }
+    if (!apply) { gone.push(inv); console.log(`  ${action.padEnd(7)} ${tag}`); continue; }
     try {
       if (action === "delete") {
         await paypalRequest(`/v2/invoicing/invoices/${inv.id}`, { method: "DELETE" });
@@ -50,12 +58,30 @@ async function main() {
         });
         counts.cancelled++;
       }
+      gone.push(inv);
       console.log(`  ${action === "delete" ? "deleted" : "cancelled"} ${tag}`);
     } catch (e) {
       counts.failed++;
       console.log(`  FAILED  ${tag}  ${(e as Error).name}: ${(e as Error).message}`);
     }
   }
+  const store = getStore();
+  for (const inv of gone) {
+    const num = inv.detail.invoice_number ?? inv.id;
+    for (const p of await store.listProposals({ invoiceId: inv.id, status: [...OPEN, ...NEEDS_HUMAN] })) {
+      if (NEEDS_HUMAN.includes(p.status) && p.resolution) continue;
+      if (!apply) { console.log(`  close   ${num.padEnd(14)} proposal ${p.id} (${p.status})`); continue; }
+      const ok = NEEDS_HUMAN.includes(p.status)
+        ? Boolean(await store.resolveProposal({ proposalId: p.id, action: "dismissed", note: "Sandbox cleanup: invoice cancelled", actor: "sandbox-cleanup" }))
+        : await store.updateProposalStatus(p.id, { status: "skipped", reason: "Sandbox cleanup: invoice cancelled" }, [p.status]);
+      if (ok) {
+        counts.proposalsClosed++;
+        await store.audit({ actor: "sandbox-cleanup", event: "proposal.closed", entityType: "proposal", entityId: p.id, data: { invoiceNumber: num, from: p.status } });
+      }
+      console.log(`  ${ok ? "closed " : "FAILED "} ${num.padEnd(14)} proposal ${p.id} (${p.status})`);
+    }
+  }
+  await store.close();
   console.log(`\n${JSON.stringify(counts)}${apply ? "" : "  (dry run; pass --apply)"}`);
 }
 

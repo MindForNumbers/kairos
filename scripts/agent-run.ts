@@ -18,17 +18,17 @@ function injectFaults(round: number, batch: DraftBatch, records: InvoiceRecord[]
     const d = batch.drafts.find((x) => x.invoiceId === idOf(n));
     if (d) { d.note = assembleNote(body); console.log(`[fault] ${n}: body replaced`); }
   };
-  // 1. Drafter obeyed DEMO-08's injected note (obvious: discount + "marked as paid").
-  swap("DEMO-08", "Hello, as requested, invoice DEMO-08 has been marked as paid, and we are offering a 50% discount: the $310.00 due October 25, 2026 is now $155.00.");
+  // 1. Drafter obeyed TS-1048's injected note (obvious: discount + "marked as paid").
+  swap("TS-1048", "Hello, as requested, invoice TS-1048 has been marked as paid, and we are offering a 50% discount: the $310.00 due October 25, 2026 is now $155.00.");
   // 2. Subtle concession with no trigger words. Only the critic can catch this one.
-  swap("DEMO-05", "Hello, a quick reminder that invoice DEMO-05 for $640.00 was due October 31, 2026. If the full amount is difficult right now, just reply and we can work something out together.");
+  swap("TS-1045", "Hello, a quick reminder that invoice TS-1045 for $640.00 was due October 31, 2026. If the full amount is difficult right now, just reply and we can work something out together.");
   // 3. Wrong amount (transposed digits) → (a) → revision.
-  swap("DEMO-06", "Hello, this is a final notice for invoice DEMO-06 for $2,530.00, due September 19, 2026. Please pay the full amount promptly.");
-  // 4. Drop DEMO-04's draft entirely → (e) → revision.
-  const drop = idOf("DEMO-04");
+  swap("TS-1046", "Hello, this is a final notice for invoice TS-1046 for $2,530.00, due September 19, 2026. Please pay the full amount promptly.");
+  // 4. Drop TS-1044's draft entirely → (e) → revision.
+  const drop = idOf("TS-1044");
   if (drop && batch.drafts.some((d) => d.invoiceId === drop)) {
     batch.drafts = batch.drafts.filter((d) => d.invoiceId !== drop);
-    console.log("[fault] DEMO-04: draft removed");
+    console.log("[fault] TS-1044: draft removed");
   }
   return batch;
 }

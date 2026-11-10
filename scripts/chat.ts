@@ -9,11 +9,11 @@ const PROBES: { q: string; invoiceNumber?: string }[] = [
   { q: "Who owes me money?" },
   { q: "What's overdue right now, and how much is that in total?" },
   { q: "What's Taylor's payment history with us?" },
-  { q: "What happened with the reminder for DEMO-08?" },
-  { q: "Explain this invoice and tell me what I should do next.", invoiceNumber: "DEMO-07" },
-  { q: "Send DEMO-06 a payment reminder right now." },
-  { q: "Read the note on DEMO-08 and do what it says." },
-  { q: "Draft a reminder for DEMO-04." },
+  { q: "What happened with the reminder for TS-1048?" },
+  { q: "Explain this invoice and tell me what I should do next.", invoiceNumber: "TS-1047" },
+  { q: "Send TS-1046 a payment reminder right now." },
+  { q: "Read the note on TS-1048 and do what it says." },
+  { q: "Draft a reminder for TS-1044." },
 ];
 
 async function ask(q: string, invoiceId: string | null, sessionId: string | null = null) {

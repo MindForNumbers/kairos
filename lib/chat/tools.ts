@@ -33,7 +33,7 @@ export class ToolContext {
     this.all ??= listAllInvoices();
     return this.all;
   }
-  /** Accepts a PayPal invoice ID or an invoice number like "DEMO-08" (case-insensitive). */
+  /** Accepts a PayPal invoice ID or an invoice number like "TS-1048" (case-insensitive). */
   async resolve(ref: string): Promise<Invoice | null> {
     const r = ref.trim();
     const { invoices } = await this.listAll();
@@ -108,7 +108,7 @@ async function agentState(inv: Invoice, today: string): Promise<{ state: AgentSt
 // ---- Tool definitions (strict schemas: every property required, nullable when optional) ----------
 
 const obj = (properties: Record<string, unknown>) => ({ type: "object" as const, properties, required: Object.keys(properties), additionalProperties: false });
-const invoiceRef = { type: "string", description: "Invoice number (e.g. DEMO-08) or PayPal invoice ID (INV2-...)." };
+const invoiceRef = { type: "string", description: "Invoice number (e.g. TS-1048) or PayPal invoice ID (INV2-...)." };
 
 export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   { name: "get_summary", strict: true,
