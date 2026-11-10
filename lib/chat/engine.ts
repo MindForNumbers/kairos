@@ -65,7 +65,7 @@ function summarize(name: string, input: Record<string, unknown>): string {
   const label: Record<string, string> = {
     get_summary: "Checked PayPal invoices", list_invoices: "Checked PayPal invoices", customers_owing: "Checked who owes money",
     get_invoice: `Looked up ${ref}`, customer_history: `Read payment history for ${ref}`, reminder_history: `Read reminder history for ${ref}`,
-    get_queue: "Checked Approvals", preview_overdue: "Checked what's overdue", request_reminder_proposals: `Drafting reminders for ${ref}`,
+    get_queue: "Checked Approvals", recent_sends: "Checked sent reminders", preview_overdue: "Checked what's overdue", request_reminder_proposals: `Drafting reminders for ${ref}`,
   };
   return label[name] ?? name;
 }

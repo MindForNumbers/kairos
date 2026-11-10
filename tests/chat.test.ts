@@ -81,7 +81,7 @@ afterEach(() => {
 test("tool allowlist: read-only tools plus exactly one draft-request action", () => {
   assert.deepEqual([...TOOL_NAMES].sort(), [
     "customer_history", "customers_owing", "get_invoice", "get_queue", "get_summary", "list_invoices",
-    "preview_overdue", "reminder_history", "request_reminder_proposals",
+    "preview_overdue", "recent_sends", "reminder_history", "request_reminder_proposals",
   ]);
 });
 
@@ -219,6 +219,20 @@ test("history tools run end to end and report times in the business timezone (fo
   assert.equal(h.remindersActuallySent, 0);
   assert.equal(h.drafts[0].now, "waiting on the Approvals page (can be approved)");
   assert.match(h.drafts[0].drafted, /PST$/);
+});
+
+test("recent_sends names the invoice, customer, local time and source from the send ledger", async () => {
+  const { getStore } = await import("../lib/db");
+  const target = (await new ToolContext().resolve("DEMO-06"))!;
+  await getStore().recordManualSend({ invoiceId: target.id, subject: "s", note: "n", actor: "user:owner" });
+  const r = await runTool("recent_sends", { period: "today", limit: 10 }, new ToolContext());
+  const d = r.data as { totalSent: number; sends: { invoiceNumber: string; customerEmail: string; sentAt: string; source: string }[] };
+  assert.equal(d.totalSent, 1);
+  assert.equal(d.sends[0].invoiceNumber, "DEMO-06");
+  assert.equal(d.sends[0].source, "manual send");
+  assert.match(d.sends[0].sentAt, /P[SD]T$/);
+  assert.ok(d.sends[0].customerEmail);
+  assert.ok((r.untrusted as { customerNames: Record<string, string> }).customerNames[target.id] !== undefined);
 });
 
 test("streaming events: text chunks, tool start/done, draft outcomes, in order", async () => {

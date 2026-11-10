@@ -112,7 +112,7 @@ const invoiceRef = { type: "string", description: "Invoice number (e.g. TS-1048)
 
 export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   { name: "get_summary", strict: true,
-    description: "Business snapshot right now: total unpaid and overdue amounts, counts, oldest overdue, reminders awaiting approval, items needing a human, reminders sent today.",
+    description: "Business snapshot right now: total unpaid and overdue amounts, counts, oldest overdue, reminders awaiting approval, items needing a human, and how many reminders were sent today (use recent_sends for which invoices).",
     input_schema: obj({}) },
   { name: "list_invoices", strict: true,
     description: "List invoices with status, amounts, due dates and days overdue. Use for 'what's overdue', 'show unpaid', or one customer's invoices.",
@@ -134,6 +134,12 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   { name: "reminder_history", strict: true,
     description: "What happened to reminders for one invoice: drafts Kairos made, their review result, approvals, sends (or why not sent), rejections and resolutions, in time order.",
     input_schema: obj({ invoice: invoiceRef }) },
+  { name: "recent_sends", strict: true,
+    description: "Reminders that were actually SENT, newest first, from Kairos's send ledger: invoice number, customer, time sent (business timezone), and whether it came from the agent (approved draft) or a manual send. Use for 'has anyone been sent a reminder', 'what went out today', 'who did we remind'.",
+    input_schema: obj({
+      period: { type: "string", enum: ["today", "last_7_days", "last_30_days", "all"] },
+      limit: { type: "integer", description: "1 to 50." },
+    }) },
   { name: "get_queue", strict: true,
     description: "The Approvals page right now: reminder drafts awaiting approval, and items that need a human (blocked or escalated) with the reason.",
     input_schema: obj({}) },
@@ -176,6 +182,32 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
       remindersAwaitingApproval: queued.length, needsHuman: human.filter((p) => !p.resolution).length, remindersSentToday: sentToday,
       totalInvoices: invoices.length, truncated,
     } };
+  },
+
+  async recent_sends(i, ctx) {
+    const period = i.period as string;
+    const days = period === "last_7_days" ? 7 : period === "last_30_days" ? 30 : null;
+    const since = period === "today" ? startOfLocalDay().getTime()
+      : days ? startOfLocalDay().getTime() - (days - 1) * 86_400_000 : 0;
+    const entries = (await getStore().listLedger({ limit: 500 })).filter((l) => Date.parse(l.sentAt) >= since);
+    const { invoices } = await ctx.listAll();
+    const byId = new Map(invoices.map((inv) => [inv.id, inv]));
+    const shown = entries.slice(0, clampLimit(i.limit));
+    return {
+      data: {
+        today: ctx.today, period, totalSent: entries.length, shown: shown.length,
+        sends: shown.map((l) => {
+          const inv = byId.get(l.invoiceId);
+          return {
+            invoiceNumber: inv?.detail.invoice_number ?? null, invoiceId: l.invoiceId,
+            customerEmail: inv ? recipientEmail(inv) : null,
+            sentAt: local(l.sentAt),
+            source: l.source === "agent" ? "agent (approved draft)" : "manual send",
+          };
+        }),
+      },
+      untrusted: { customerNames: Object.fromEntries(shown.map((l) => { const inv = byId.get(l.invoiceId); return [l.invoiceId, inv ? nameOf(inv) : null]; })) },
+    };
   },
 
   async list_invoices(i, ctx) {
