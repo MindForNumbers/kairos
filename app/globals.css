@@ -1,10 +1,29 @@
+/*
+ * Kairos design tokens. Light-first; dark mode redefines the same names. The accent is our own
+ * "Kairos blue" (cobalt-indigo), not any PayPal brand blue. Every page, the Kairos panel and the
+ * AG Studio theme on /reports read these variables.
+ */
 :root {
-  --bg: #f7f7f5; --surface: #fff; --text: #1a1a1a; --muted: #6b6b6b;
-  --border: #e3e3df; --accent: #0f6b5c; --accent-soft: #e6f2ef; --danger: #b42318; --ok: #067647; --warn: #b54708;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bg: #f5f6fa; --surface: #ffffff; --surface-2: #f8f9fc; --text: #0f1424; --muted: #5f6b7d;
+  --border: #e5e8ef; --border-strong: #cfd5e1;
+  --accent: #4353e0; --accent-strong: #3442c4; --accent-soft: #eef0fd; --on-accent: #ffffff;
+  --danger: #c0352b; --ok: #0e7a4f; --warn: #b4580b;
+  --radius: 16px; --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(15, 20, 36, .04), 0 2px 8px rgba(15, 20, 36, .05);
+  --shadow-hover: 0 2px 4px rgba(15, 20, 36, .05), 0 8px 20px rgba(15, 20, 36, .08);
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font);
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #141414; --surface: #1d1d1d; --text: #ececec; --muted: #9a9a9a; --border: #2e2e2e; --accent: #5cc4ae; --accent-soft: #15302b; --danger: #ff8a7a; --ok: #6fd3a0; --warn: #f5b66b; }
+  :root {
+    --bg: #0e1016; --surface: #161922; --surface-2: #1b1f2a; --text: #e9ecf3; --muted: #9aa3b5;
+    --border: #262b38; --border-strong: #353b4b;
+    --accent: #8c97ff; --accent-strong: #a6aeff; --accent-soft: #1d2142; --on-accent: #0e1016;
+    --danger: #ff8a7a; --ok: #5fd39c; --warn: #f2b266;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3); --shadow-hover: 0 4px 16px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
@@ -187,4 +206,88 @@ input.flag-warn, textarea.flag-warn { border-color: var(--warn); }
 .host-assistant { height: 620px; }
 .host-demo-kairos { --kairos-accent: #52525b; height: 100%; }
 @media (max-width: 960px) { .host-grid { grid-template-columns: 1fr; } .host-assistant { height: 560px; } }
+/* ==== Visual refresh: light-first Kairos look (tokens above; this layer wins the cascade) ==== */
+body { font-family: var(--font); -webkit-font-smoothing: antialiased; line-height: 1.5; }
+main { max-width: 1120px; padding: 32px 20px 72px; }
+h1 { font-size: 2rem; font-weight: 750; letter-spacing: -0.025em; line-height: 1.15; margin: 0 0 12px; }
+h2 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; margin: 32px 0 12px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+.muted { color: var(--muted); }
+.subtitle { margin: 2px 0 0; font-size: 1rem; }
+.page-head { margin-bottom: 24px; gap: 16px; }
+.page-head h1 { margin: 0 0 6px; }
+
+/* Top bar: white, quiet, with an underlined active nav item. */
+.topbar { padding: 0 24px; min-height: 64px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
+.brand-mark { background: var(--accent); color: var(--on-accent); border-radius: 10px; width: 34px; height: 34px; }
+.brand-name { letter-spacing: -0.01em; }
+.connection { background: var(--surface-2); }
+.nav { gap: 2px; align-self: stretch; }
+.nav .nav-link { align-self: stretch; padding: 0 12px; border-radius: 0; color: var(--muted); font-weight: 500; box-shadow: inset 0 -2px 0 transparent; transition: color .15s, box-shadow .15s; }
+.nav .nav-link:hover { background: none; color: var(--text); }
+.nav .nav-link.active { background: none; color: var(--text); font-weight: 650; box-shadow: inset 0 -2px 0 var(--accent); }
+.nav .button { align-self: center; }
+.nav-badge { background: var(--accent); color: var(--on-accent); }
+
+/* Buttons: primary = filled pill, secondary = outlined pill. */
+.button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 18px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent; color: var(--text); font-weight: 600; font-size: .9rem; line-height: 1.2; transition: background .15s, border-color .15s, box-shadow .15s; }
+.button:hover:not(:disabled) { border-color: var(--text); background: var(--surface-2); }
+.button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.button.primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+.button.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border-strong)); }
+.button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .tile:focus-visible, .quick:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
+
+/* Cards and tiles: rounded, soft border, subtle shadow. */
+.card { border-radius: var(--radius); border-color: var(--border); padding: 20px; box-shadow: var(--shadow); }
+.tiles { gap: 16px; margin-bottom: 36px; }
+.tile { border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow); transition: box-shadow .15s, border-color .15s; }
+.tile:hover { border-color: var(--border-strong); box-shadow: var(--shadow-hover); }
+.tile-label { font-size: .82rem; font-weight: 500; }
+.tile-value { font-size: 1.85rem; letter-spacing: -0.02em; }
+.execution, .note-text, .offer, .untrusted blockquote { border-radius: var(--radius-sm); }
+.offer { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* Forms */
+label { font-size: .82rem; font-weight: 500; }
+input, select, textarea { padding: 10px 12px; border-radius: var(--radius-sm); border-color: var(--border-strong); background: var(--surface); }
+input:focus, select:focus, textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.login { max-width: 400px; margin: 72px auto; padding: 28px; }
+
+/* Tables */
+th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+td a { text-decoration: none; font-weight: 600; }
+td a:hover { text-decoration: underline; }
+tbody tr:hover td { background: var(--surface-2); }
+
+/* Status as soft badges; pills and tone tags in the same family. */
+.status { display: inline-block; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, currentColor 11%, transparent); font-size: .7rem; letter-spacing: .03em; }
+.pill { padding: 3px 10px; background: color-mix(in srgb, currentColor 8%, transparent); }
+.count { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.meter { background: var(--surface-2); }
+
+/* Home: quick actions (Kairos's own actions; icons in rounded-square tiles). */
+.quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 0 0 28px; }
+.quick { display: flex; flex-direction: column; gap: 10px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); color: var(--text); text-decoration: none; transition: box-shadow .15s, border-color .15s, transform .15s; }
+.quick:hover { border-color: var(--border-strong); box-shadow: var(--shadow-hover); transform: translateY(-1px); }
+.quick-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.quick-icon svg { width: 22px; height: 22px; }
+.quick-title { font-weight: 650; font-size: .95rem; letter-spacing: -0.01em; }
+.quick-sub { font-size: .8rem; color: var(--muted); line-height: 1.35; }
+@media (max-width: 640px) {
+  main { padding: 20px 16px 56px; }
+  h1 { font-size: 1.6rem; }
+  .topbar { padding: 8px 16px 0; }
+  .nav { align-self: auto; min-height: 44px; }
+  .quick-actions { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .quick { padding: 14px; }
+}
+
+/* Long URLs wrap inside cards; the Director's reason column stays readable when its table scrolls. */
+.card a, .card p { overflow-wrap: anywhere; }
+td.why { min-width: 240px; }
+
+/* The Kairos panel wears the same card style in this app. */
+html .kairos-root.kairos-app-theme { --k-on-accent: var(--on-accent); --k-radius: 12px; --k-font: var(--font); }
+html .kairos-root.kairos-app-theme .kairos-panel { border-radius: var(--radius); box-shadow: var(--shadow); }
+
 @media (prefers-color-scheme: dark) { .host-demo { background: #18181b; color: #e4e4e7; border-color: #3f3f46; } .host-bar { background: #27272a; border-color: #3f3f46; } .host-widget { background: #1f1f23; border-color: #3f3f46; } .host-demo-kairos { --kairos-accent: #d4d4d8; } }

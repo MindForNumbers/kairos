@@ -95,7 +95,7 @@ export default async function DirectorPage() {
                   <td>{m.pressure}</td>
                   <td><span className={`pill ${MOVE_CLASS[m.move]}`}>{MOVE_LABEL[m.move]}</span></td>
                   <td>{dayLabel(m.day, plan.today)}</td>
-                  <td className="muted">{m.reason}</td>
+                  <td className="muted why">{m.reason}</td>
                 </tr>
               ))}
             </tbody>

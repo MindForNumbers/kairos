@@ -9,6 +9,27 @@ import { dueDateOf } from "@/lib/agent/sweep";
 
 export const dynamic = "force-dynamic";
 
+// Inline line icons (stroke = currentColor), drawn for Kairos.
+const Icon = ({ d }: { d: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d={d} /></svg>
+);
+const ICONS = {
+  photo: "M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z",
+  voice: "M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6",
+  agent: "M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8zM18.5 14.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8zM5.5 15l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4L3.5 17l1.4-.6z",
+  approve: "M9 11.5l2.2 2.2L15.5 9.5M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z",
+  reports: "M4 20V10M10 20V4M16 20v-7M22 20H2",
+};
+function quickActions(waiting: number) {
+  return [
+    { href: "/invoices/new#from-photo", title: "Invoice from a photo", sub: "Snap a quote or job note; Kairos fills the form for you to check.", icon: <Icon d={ICONS.photo} /> },
+    { href: "/invoices/new#from-photo", title: "Dictate an invoice", sub: "Say what you did and for whom; review before it's created.", icon: <Icon d={ICONS.voice} /> },
+    { href: "/approvals#run-agent", title: "Run Kairos now", sub: "Draft reminders for overdue invoices. Nothing sends without you.", icon: <Icon d={ICONS.agent} /> },
+    { href: "/approvals", title: "Review approvals", sub: waiting ? `${waiting} reminder${waiting === 1 ? "" : "s"} waiting for your OK.` : "Nothing waiting right now.", icon: <Icon d={ICONS.approve} /> },
+    { href: "/reports", title: "Reports", sub: "Aging, cash forecast and the Director's plan.", icon: <Icon d={ICONS.reports} /> },
+  ];
+}
+
 export default async function HomePage() {
   await requirePageSession("/");
 
@@ -35,6 +56,16 @@ export default async function HomePage() {
         </div>
         <Link href="/invoices/new" className="button primary">New invoice</Link>
       </div>
+
+      <nav className="quick-actions" aria-label="Quick actions">
+        {quickActions(d.queue.awaitingApproval).map((q) => (
+          <Link key={q.title} href={q.href} className="quick">
+            <span className="quick-icon" aria-hidden>{q.icon}</span>
+            <span className="quick-title">{q.title}</span>
+            <span className="quick-sub">{q.sub}</span>
+          </Link>
+        ))}
+      </nav>
 
       <section className="tiles">
         <Link href="/invoices" className="tile">

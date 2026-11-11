@@ -33,7 +33,7 @@ export default function RunAgentButton() {
 
   const byReason = result ? Object.entries(result.excluded.reduce<Record<string, string[]>>((m, e) => ((m[e.reason] ??= []).push(e.invoiceNumber ?? "?"), m), {})) : [];
   return (
-    <div className="run-agent">
+    <div className="run-agent" id="run-agent">
       <button className="button primary" onClick={run} disabled={busy}>{busy ? "Running… (drafting and reviewing)" : "Run agent"}</button>
       {result && (
         <div className="run-result">

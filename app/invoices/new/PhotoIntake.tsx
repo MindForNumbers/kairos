@@ -119,7 +119,7 @@ export default function PhotoIntake({ onFilled, disabled }: { onFilled: (f: Fill
 
   const working = busy !== null || disabled;
   return (
-    <div className="card intake">
+    <div className="card intake" id="from-photo">
       <h2 style={{ marginTop: 0 }}>Start from a photo</h2>
       <p className="muted">Snap a job note, quote or list. Kairos fills in the form below for you to check; nothing is created until you click a button at the bottom. The photo isn&apos;t saved.</p>
       <div className="actions" style={{ justifyContent: "flex-start" }}>

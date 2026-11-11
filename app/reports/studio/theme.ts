@@ -1,16 +1,16 @@
 /**
  * AG Studio theme for /reports. Every value points at a Kairos CSS variable from app/globals.css,
  * which already switches for dark mode, so Studio's UI, grids and charts follow light/dark with the
- * rest of the app. Teal accent; neutral surfaces.
+ * rest of the app. Kairos blue accent; neutral surfaces.
  */
 import { studioTheme } from "ag-studio";
 
 const v = (name: string) => `var(--${name})`;
 const line = (color: string) => ({ width: 1, color: v(color) });
-// Teal-led categorical palette (accent first), then muted neutrals.
-const PALETTE = ["var(--accent)", "#3a9e8c", "#7cc4b5", "#b54708", "#6b6b6b", "#0b4f44", "#a6d9cf", "#d08a3c", "#9a9a9a", "#2c7a6c"];
+// Kairos-blue-led categorical palette (accent first), then muted neutrals.
+const PALETTE = ["var(--accent)", "#7d88ee", "#b7bdf6", "#d97a1e", "#64748b", "#2b36a3", "#d3d7fb", "#f0a860", "#94a3b8", "#5a67e8"];
 const palette = Object.fromEntries(PALETTE.flatMap((c, i) => [[`chartPaletteFills${i + 1}Color`, c], [`chartPaletteStrokes${i + 1}Color`, c]]));
-const FONT = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+const FONT = "var(--font)";
 
 export const kairosStudioTheme = studioTheme.withParams({
   fontFamily: FONT,
@@ -38,7 +38,7 @@ export const kairosStudioTheme = studioTheme.withParams({
 
   studioWidgetBackgroundColor: v("surface"),
   studioWidgetBorder: line("border"),
-  studioWidgetBorderRadius: 10,
+  studioWidgetBorderRadius: 16,
   studioWidgetPadding: 10,
   studioWidgetTitleFontFamily: FONT,
   studioWidgetTitleFontSize: 15,
