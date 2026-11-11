@@ -85,10 +85,10 @@ export const PAGE_TITLES: Record<string, string> = { overview: "Overview", invoi
 
 export const kairosReport: AgReportState = { selectedPageId: overview.id, pages: [overview, invoices] } as AgReportState;
 
-/** The filters panel stays out of the way in view mode (the canvas needs the width) and opens in edit mode. */
+/** The filters panel starts collapsed in both modes (the canvas, and in edit mode Compose, Data and the assistant, need the width); one click opens it. */
 export const withFiltersPanelFor = (mode: "view" | "edit", state: AgReportState): AgReportState => ({
   ...state,
-  panels: { ...state.panels, filters: { ...state.panels?.filters, collapsed: mode === "view" } },
+  panels: { ...state.panels, filters: { ...state.panels?.filters, collapsed: mode === "view" || mode === "edit" } },
 });
 
 /** Phones: one widget per row, full width, in reading order. */

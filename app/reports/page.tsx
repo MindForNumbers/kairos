@@ -29,7 +29,7 @@ export default async function ReportsPage() {
         </div>
       </div>
       {/* The licence key is public by design (AG Studio validates it in the browser). */}
-      <ReportsLoader data={data} licenseKey={process.env.AG_STUDIO_LICENSE_KEY || undefined} />
+      <ReportsLoader data={data} licenseKey={process.env.AG_STUDIO_LICENSE_KEY || undefined} aiEnabled={!!process.env.ANTHROPIC_API_KEY && process.env.KAIROS_REPORTS_AI !== "off"} />
     </>
   );
 }

@@ -200,12 +200,21 @@ One invoice list per page view, and no PayPal calls of its own. `lib/reports/bui
 
 **Bundle:** AG Studio, with the AG Grid and AG Charts Enterprise it includes, builds to one chunk of about 6.5 MB (1.8 MB gzipped). It is loaded with a client-only dynamic import on `/reports` alone, after the page shell has rendered. A boundary rule keeps every other file from importing it, so no other page downloads it.
 
+**Ask for a view in plain English (AG Studio's agent framework):** in Customize, the AI Assistant panel takes requests like "show overdue by customer" or "add a chart of Director pressure by customer". Studio's built-in agents (lead, page, widget, data) build or configure the widget.
+- **Model path:** each model turn goes through Kairos's adapter (`app/reports/studio/ai.ts`) to `/api/reports/ai`, which calls Claude (`KAIROS_CHAT_MODEL`). That route is session-gated and same-origin, like the chat. No key reaches the browser.
+- **Tools:** `lib/reports/ai.ts` translates between Studio's protocol and Claude's Messages API. Only Studio's own report tools reach the model: view, query, add/position/remove/configure widgets, filters, calculated fields, plan and delegation. Studio runs them on the report in the owner's browser, so they can't touch invoices, reminders or PayPal. Any other tool name is dropped.
+- **Customer text:** Kairos's rules lead the system prompt, and customer-entered text in the data is treated as data.
+- **Spend:** each model call is under the chat's per-message cap (`KAIROS_CHAT_TURN_COST_CAP`) and the shared daily cap, and is recorded as `reports_ai`. A typical request is about 15 calls and about $0.03 with Haiku.
+- **Turning it off:** set `KAIROS_REPORTS_AI=off` to hide it. It's also hidden without `ANTHROPIC_API_KEY`.
+
 **Licence:** AG Studio is commercial. Without a key it runs with a watermark and console warnings. Set `AG_STUDIO_LICENSE_KEY` (a free 45-day trial key from AG Grid). The key is passed to the browser, as AG Studio requires, so treat it as public.
 
 **Boundary rules:**
-- `lib/reports/` and `app/reports/` import no PayPal client, queue, executor, payments or db module, make no HTTP calls and write nothing.
+- `lib/reports/` and `app/reports/` import no PayPal client, queue, executor, payments or db module, make no HTTP calls and write nothing. The one exception is the assistant adapter's single `fetch` to Kairos's own `/api/reports/ai`.
+- The adapter can't name a model provider.
+- `/api/reports/ai` may only call the model through the budget, with no PayPal, queue, executor, chat tools or store access.
 - `load.ts` may run only the `get_report` tool.
-- `build.ts` is pure.
+- `build.ts` and `ai.ts` are pure.
 
 ## PayPal API code and the APIMatic plugin
 

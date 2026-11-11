@@ -6,7 +6,8 @@
  * only. Nothing here writes to Kairos or PayPal.
  */
 import { useMemo, useRef, useState } from "react";
-import { enableStudioDevValidations, type AgStudioApi, type AgStudioMode } from "ag-studio";
+import { AgStudioAiModule, enableStudioDevValidations, type AgStudioApi, type AgStudioMode } from "ag-studio";
+import { buildReportsAi } from "./ai";
 import { AgStudio, AgStudioProvider, createWidgets } from "ag-studio-react";
 import type { ReportsData } from "@/lib/reports/build";
 import { buildSources } from "./sources";
@@ -17,11 +18,13 @@ import "./reports.css";
 
 if (process.env.NODE_ENV !== "production") enableStudioDevValidations();
 
-export default function ReportsStudio({ data, licenseKey }: { data: ReportsData; licenseKey?: string }) {
+export default function ReportsStudio({ data, licenseKey, aiEnabled = false }: { data: ReportsData; licenseKey?: string; aiEnabled?: boolean }) {
   const apiRef = useRef<AgStudioApi | null>(null);
   const [mode, setMode] = useState<AgStudioMode>("view");
   const [page, setPage] = useState(kairosReport.selectedPageId ?? "overview");
   const sources = useMemo(() => buildSources(data), [data]);
+  // Read once, when Studio is created.
+  const [ai] = useState(() => (aiEnabled ? buildReportsAi() : undefined));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- custom widget ids aren't in the default registry type
   const widgets = useMemo(() => (cfg: any) => createWidgets<any>({
     additionalTypes: KAIROS_WIDGETS,
@@ -62,12 +65,13 @@ export default function ReportsStudio({ data, licenseKey }: { data: ReportsData;
         </div>
       </div>
       <div className="kr-canvas">
-        <AgStudioProvider licenseKey={licenseKey}>
+        <AgStudioProvider licenseKey={licenseKey} modules={ai ? [AgStudioAiModule] : undefined}>
           <AgStudio
             style={{ height: "100%", width: "100%" }}
             theme={kairosStudioTheme}
             data={sources}
             context={data}
+            ai={ai}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             widgets={widgets as any}
             initialState={initialState}

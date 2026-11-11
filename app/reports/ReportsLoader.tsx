@@ -8,6 +8,6 @@ const ReportsStudio = dynamic(() => import("./studio/ReportsStudio"), {
   loading: () => <div className="card muted">Loading reports…</div>,
 });
 
-export default function ReportsLoader(props: { data: ReportsData; licenseKey?: string }) {
+export default function ReportsLoader(props: { data: ReportsData; licenseKey?: string; aiEnabled?: boolean }) {
   return <ReportsStudio {...props} />;
 }

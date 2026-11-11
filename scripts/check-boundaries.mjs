@@ -128,8 +128,24 @@ const rules = [
     name: "Reports are read-only: lib/reports/ and app/reports/ use no PayPal client, queue, executor, HTTP or store writes (data comes from get_report, the Director and insights)",
     applies: (f) => f.startsWith("lib/reports/") || f.startsWith("app/reports/"),
     // Type-only imports (e.g. the Invoice type) carry no code, so they are allowed.
-    check: (src) => !/from\s+["']@\/lib\/(paypal|queue|executor|payments|db)\b|from\s+["']paypal["']|paypal-read|\bfetch\(|["'`]\/api\/|getStore\(|\.(createHold|clearHold|createApproval|claimApproval|releaseApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|finishRun|appendIncentivePolicy|appendChatMessage|audit)\(|\b(runAgent|approveProposal|executeApproval|sendManualReminder|triggerRun)\b|request_reminder_proposals/
-      .test(src.replace(/^import type [^;]*;$/gm, "")),
+    check: (src, f) => !/from\s+["']@\/lib\/(paypal|queue|executor|payments|db)\b|from\s+["']paypal["']|paypal-read|\bfetch\(|["'`]\/api\/|getStore\(|\.(createHold|clearHold|createApproval|claimApproval|releaseApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|finishRun|appendIncentivePolicy|appendChatMessage|audit)\(|\b(runAgent|approveProposal|executeApproval|sendManualReminder|triggerRun)\b|request_reminder_proposals/
+      // The Studio assistant's adapter (checked by its own rule below) is the one file allowed its single fetch.
+      .test((f === "app/reports/studio/ai.ts" ? src.replace(/fetch\(ENDPOINT,|const ENDPOINT = "\/api\/reports\/ai";/g, "") : src).replace(/^import type [^;]*;$/gm, "")),
+  },
+  {
+    name: "The /reports assistant's adapter calls only Kairos's own /api/reports/ai, never a model provider",
+    applies: (f) => f === "app/reports/studio/ai.ts",
+    check: (src) => /const ENDPOINT = "\/api\/reports\/ai";/.test(src) && [...src.matchAll(/\bfetch\(([^,)]*)/g)].every((m) => m[1].trim() === "ENDPOINT") && !/anthropic|openai|api\.|https?:\/\//i.test(src.replace(/^\s*(\*|\/\/).*$/gm, "")),
+  },
+  {
+    name: "/api/reports/ai only calls the model: no PayPal, queue, executor, chat tools, HTTP or store access of its own (spend goes through the budget)",
+    applies: (f) => f.startsWith("app/api/reports/"),
+    forbid: /from\s+["']@\/lib\/(paypal|queue|executor|payments|db|chat|director|insights)\b|paypal-read|\bfetch\(|getStore\(|\brunAgent\b|runTool/,
+  },
+  {
+    name: "lib/reports/ai.ts is pure translation: no I/O, model client, store or clock",
+    applies: (f) => f === "lib/reports/ai.ts",
+    forbid: /getStore|from\s+["']node:|from\s+["']@\/lib\/|structuredCall|chatCall|\bfetch\(|\bnow\(|nowMs\(|Math\.random/,
   },
   {
     name: "lib/reports/build.ts is pure: no I/O, store, model or clock reads",
