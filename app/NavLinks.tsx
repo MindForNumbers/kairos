@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/invoices", label: "Invoices", match: (p: string) => p.startsWith("/invoices") },
   { href: "/approvals", label: "Approvals", match: (p: string) => p.startsWith("/approvals") },
   { href: "/director", label: "Director", match: (p: string) => p.startsWith("/director") },
+  { href: "/reports", label: "Reports", match: (p: string) => p.startsWith("/reports") },
   { href: "/settings/incentives", label: "Incentives", match: (p: string) => p.startsWith("/settings") },
 ];
 

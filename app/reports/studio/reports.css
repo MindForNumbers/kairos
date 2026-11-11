@@ -1,0 +1,42 @@
+/* /reports: Kairos tokens only (app/globals.css), so light/dark follow the rest of the app. */
+.kr-shell { display: flex; flex-direction: column; height: max(640px, calc(100vh - 210px)); min-height: 0; }
+.kr-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.kr-tabs { display: flex; gap: 4px; }
+.kr-tab, .kr-btn { font: inherit; font-size: .9rem; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
+.kr-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.kr-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.kr-actions { display: flex; gap: 8px; }
+.kr-canvas { flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg); }
+
+.kr-widget { height: 100%; padding: 6px 8px; box-sizing: border-box; display: flex; flex-direction: column; color: var(--text); font-size: .9rem; overflow: hidden; }
+.kr-title { font-weight: 600; font-size: 15px; }
+.kr-sub { color: var(--muted); font-size: .8rem; margin-top: 2px; }
+.kr-body { flex: 1; min-height: 0; overflow: auto; margin-top: 10px; }
+.kr-big { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+.kr-row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin: 6px 0; color: var(--muted); font-size: .85rem; }
+.kr-bar { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
+.kr-bar-fill { display: block; height: 100%; border-radius: 999px; }
+.kr-accent { background: var(--accent); }
+.kr-warn { background: var(--warn); }
+.kr-danger { background: var(--danger); }
+.kr-muted { background: var(--muted); }
+.kr-note { color: var(--muted); font-size: .8rem; margin: 8px 0 0; line-height: 1.4; }
+.kr-warn-text { color: var(--warn); font-weight: 600; }
+.kr-ok-text { color: var(--ok); font-weight: 600; }
+.kr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.kr-line { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.kr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kr-num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.kr-meta { color: var(--muted); font-size: .78rem; margin-top: 3px; }
+.kr-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; }
+.kr-tile { border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.kr-tile-n { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kr-tile-l { color: var(--muted); font-size: .75rem; }
+
+@media (max-width: 720px) {
+  .kr-shell { height: auto; }
+  .kr-canvas { height: 1800px; flex: none; }
+}
+
+/* /reports gets the wide canvas, like pages with the assistant. */
+main:has(.kr-shell) { max-width: 1400px; }

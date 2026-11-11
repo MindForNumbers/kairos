@@ -177,6 +177,36 @@ The host passes no invoice data. Kairos reads it from PayPal itself, and the hos
 - Spend caps apply.
 - Nothing is sent until the owner approves it on Approvals.
 
+## Reports (AG Studio)
+
+`/reports` is a read-only analytics page built with [AG Studio](https://www.ag-grid.com/studio/) (AG Grid's embedded dashboard component, `ag-studio` + `ag-studio-react` 3.1.0).
+
+**Two pages:**
+- **Overview:** collected vs outstanding this month, the 14-day cash forecast against your cash target, reminder activity, aging of open invoices, top customers owing, Director pressure by customer, and the forecast per invoice.
+- **Invoices:** a sortable, filterable grid (number, customer, status, due date, days overdue, amount due, Director pressure and next move) and a pivot of amount due grouped by customer and aging bucket.
+
+**Same numbers as the chat:** `lib/reports/load.ts` builds the page from the code the chat and briefing already use:
+- the chat's own `get_report` tool handler (this month);
+- the Director plan, names and forecast through `loadInsights`;
+- `invoice-stats` for the invoice rows.
+
+One invoice list per page view, and no PayPal calls of its own. `lib/reports/build.ts` only reshapes those results into rows (pure, tested in `tests/reports.test.ts`).
+
+**Custom widgets:** forecast vs target, Director pressure, collected vs outstanding and reminder activity are Kairos React widgets registered with AG Studio's `createWidgets`. They render Kairos's numbers from Studio's `context`. The aging, owing and forecast charts and the invoice grid are stock AG Studio widgets over Kairos's tables, running in AG Studio's in-browser data engine with cross-filtering.
+
+**Customize:** switches Studio to edit mode, where you can move widgets or add new ones from Kairos's tables (the "Kairos" group sits at the top of the widget menu). Changes live in that browser tab only; Reset layout restores the default. Nothing on the page writes to Kairos or PayPal.
+
+**Look:** Kairos's teal theme via `studioTheme.withParams`. Every value is a Kairos CSS variable, so light and dark follow the rest of the app. Below 720px wide, widgets stack one per row.
+
+**Bundle:** AG Studio, with the AG Grid and AG Charts Enterprise it includes, builds to one chunk of about 6.5 MB (1.8 MB gzipped). It is loaded with a client-only dynamic import on `/reports` alone, after the page shell has rendered. A boundary rule keeps every other file from importing it, so no other page downloads it.
+
+**Licence:** AG Studio is commercial. Without a key it runs with a watermark and console warnings. Set `AG_STUDIO_LICENSE_KEY` (a free 45-day trial key from AG Grid). The key is passed to the browser, as AG Studio requires, so treat it as public.
+
+**Boundary rules:**
+- `lib/reports/` and `app/reports/` import no PayPal client, queue, executor, payments or db module, make no HTTP calls and write nothing.
+- `load.ts` may run only the `get_report` tool.
+- `build.ts` is pure.
+
 ## PayPal API code and the APIMatic plugin
 
 New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@context-plugins` v0.4.1, the `paypal:typescript-*` skills) and its generated SDK, the `paypal` package (PayPal Server SDK v2.29.0, pinned to commit `5d0df8a` over public https: `git+https://github.com/context-plugins/paypal-typescript-sdk.git#5d0df8a8817e5fdf2e2cd48e68f790ea4730aab2`). `npm ci` clones it without credentials and builds it with the SDK's `prepare` script, because the repo has no prebuilt `dist/`. npm rewrites a GitHub `resolved` URL to `git+ssh` on `npm install`, so after any `npm install`, check that `package-lock.json` still says `git+https`. That SDK covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**.
@@ -205,6 +235,7 @@ New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@c
 - the Kairos Director;
 - proactive insights with holds;
 - the embeddable assistant;
+- read-only reports with AG Studio;
 - the nightly demo reset, cron runs and webhook handling.
 
 **Next:**

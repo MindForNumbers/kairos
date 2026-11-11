@@ -125,6 +125,28 @@ const rules = [
     forbid: /from\s+["'](next(\/[^"']*)?|@\/lib\/[^"']*|@\/app\/[^"']*|server-only)["']|dangerouslySetInnerHTML/,
   },
   {
+    name: "Reports are read-only: lib/reports/ and app/reports/ use no PayPal client, queue, executor, HTTP or store writes (data comes from get_report, the Director and insights)",
+    applies: (f) => f.startsWith("lib/reports/") || f.startsWith("app/reports/"),
+    // Type-only imports (e.g. the Invoice type) carry no code, so they are allowed.
+    check: (src) => !/from\s+["']@\/lib\/(paypal|queue|executor|payments|db)\b|from\s+["']paypal["']|paypal-read|\bfetch\(|["'`]\/api\/|getStore\(|\.(createHold|clearHold|createApproval|claimApproval|releaseApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|finishRun|appendIncentivePolicy|appendChatMessage|audit)\(|\b(runAgent|approveProposal|executeApproval|sendManualReminder|triggerRun)\b|request_reminder_proposals/
+      .test(src.replace(/^import type [^;]*;$/gm, "")),
+  },
+  {
+    name: "lib/reports/build.ts is pure: no I/O, store, model or clock reads",
+    applies: (f) => f === "lib/reports/build.ts",
+    forbid: /getStore|from\s+["']node:|@\/lib\/llm|structuredCall|\bnow\(|nowMs\(|localDate\(|Math\.random/,
+  },
+  {
+    name: "lib/reports/load.ts runs only the chat's read-only get_report tool",
+    applies: (f) => f === "lib/reports/load.ts",
+    check: (src) => [...src.matchAll(/runTool\(\s*["'](\w+)["']/g)].every((m) => m[1] === "get_report") && !/runTool\(\s*[^"'\s]/.test(src),
+  },
+  {
+    name: "AG Studio is loaded only by app/reports/ (keeps its bundle off every other page)",
+    applies: (f) => !f.startsWith("app/reports/") && f !== "scripts/check-boundaries.mjs",
+    forbid: /from\s+["']ag-(studio|studio-react|grid-[a-z]+|charts-[a-z]+)["']|import\(["']ag-/,
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,

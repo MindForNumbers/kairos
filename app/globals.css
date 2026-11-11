@@ -126,6 +126,9 @@ code { font-size: .85em; background: var(--bg); border: 1px solid var(--border);
 @media (max-width: 640px) {
   .run-agent, .run-result { align-items: flex-start; text-align: left; }
   .connection { order: 3; }
+  /* The nav scrolls sideways inside the bar instead of widening the page. */
+  .nav { width: 100%; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .nav .nav-link, .nav .button { flex: 0 0 auto; }
 }
 
 /* Tables scroll inside their card on narrow screens instead of widening the page. */
