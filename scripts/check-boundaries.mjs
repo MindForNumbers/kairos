@@ -95,6 +95,16 @@ const rules = [
     check: (src) => /offer:\s*z\.enum\(\["payment_plan",\s*"none"\]\)/.test(src) && !/z\.object\(\{[^}]*\b(parts|minimumAmount)\b/.test(src),
   },
   {
+    name: "lib/director/ is deterministic and read-only: no LLM, no direct PayPal client (reads go through paypal-read), no queue/executor, no HTTP, no store writes",
+    applies: (f) => f.startsWith("lib/director/"),
+    forbid: /from\s+["']@\/lib\/(llm|paypal|queue|executor)\b|structuredCall|@anthropic-ai\/sdk|\bfetch\(|\.(createApproval|claimApproval|releaseApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|finishRun|appendIncentivePolicy|audit)\(/,
+  },
+  {
+    name: "lib/director/model.ts is pure: no I/O, no store, no clock reads (today comes in the input)",
+    applies: (f) => f === "lib/director/model.ts",
+    forbid: /getStore|from\s+["']node:|\bnow\(|nowMs\(|localDate\(|Math\.random/,
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,

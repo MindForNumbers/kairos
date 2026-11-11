@@ -10,6 +10,8 @@ import { ESCALATE_AFTER_DAYS, currentReason } from "@/lib/agent/policy";
 import { runAgent } from "@/lib/agent/pipeline";
 import { RunBusyError, withRunLock } from "@/lib/agent/run-guard";
 import { CostCapError } from "@/lib/agent/budget";
+import { loadDirectorPlan } from "@/lib/director/gather";
+import { MOVE_LABEL } from "@/lib/director/model";
 import { amountDue, createdAt, currencyOf, daysOverdue, isOpen, recipientEmail, stats, sumDue, toCents, fromCents } from "@/lib/invoice-stats";
 
 /**
@@ -156,6 +158,9 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   { name: "preview_overdue", strict: true,
     description: "Read-only preview of what a Kairos run would draft now: which overdue invoices are in the next run, which are deferred, and which are skipped and why.",
     input_schema: obj({}) },
+  { name: "get_director_plan", strict: true,
+    description: "The Kairos Director's plan: for each customer with overdue invoices, a pressure score (0-100), the next move (wait, friendly, firm, offer payment plan, final notice, escalate), the suggested day and a one-line reason naming the top factors; plus the 14-day cash forecast. Deterministic code, read-only. Use for 'who should I focus on this week, and why?', 'why is Kairos waiting on X?'.",
+    input_schema: obj({ limit: { type: "integer", description: "Customers to return, 1 to 50." } }) },
   { name: "request_reminder_proposals", strict: true,
     description: "Ask Kairos to DRAFT payment reminders for up to 5 invoices. Drafts go through the normal checks and land on the Approvals page; nothing is sent until the user approves there. Only call this after the user has asked for it or said yes to your offer. Takes invoice references only.",
     input_schema: obj({ invoices: { type: "array", items: invoiceRef, description: "1 to 5 invoices." } }) },
@@ -177,6 +182,31 @@ export async function runTool(name: string, input: Input, ctx: ToolContext): Pro
 }
 
 const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolResult>> = {
+  async get_director_plan(i, ctx) {
+    const { invoices } = await ctx.listAll();
+    const plan = await loadDirectorPlan({ invoices, today: ctx.today });
+    const m = (c: number) => money("USD", (c / 100).toFixed(2));
+    const names = Object.fromEntries(invoices.map((inv) => {
+      const b = inv.primary_recipients?.[0]?.billing_info;
+      return [b?.email_address?.toLowerCase() ?? "", cleanUntrusted(b?.name?.full_name || [b?.name?.given_name, b?.name?.surname].filter(Boolean).join(" "), 140)];
+    }).filter(([e]) => e));
+    const customers = plan.customers.slice(0, clampLimit(i.limit));
+    return {
+      data: {
+        today: plan.today,
+        customers: customers.map((c) => ({
+          customer: c.customer, owes: m(c.openCents), pressure: c.pressure, nextMove: MOVE_LABEL[c.move], day: c.day, reason: c.reason,
+          history: { paidInvoices: c.history.paidInvoices, avgDaysLate: c.history.avgDaysLate, onTimeRatio: c.history.onTimeRatio, lifetimePaid: m(c.history.lifetimePaidCents) },
+          invoices: c.invoices.map((v) => ({ invoice: v.invoiceNumber ?? v.invoiceId, due: m(v.dueCents), daysOverdue: v.daysOverdue, pressure: v.pressure, nextMove: MOVE_LABEL[v.move], day: v.day, reason: v.reason })),
+        })),
+        forecast: { next14Days: m(plan.forecast.expectedCents), cashTarget: plan.forecast.targetCents ? m(plan.forecast.targetCents) : null,
+          shortfall: plan.forecast.targetCents ? m(plan.forecast.shortfallCents) : null, confidence: plan.forecast.confidence, note: plan.forecast.confidenceNote },
+        note: "Pressure and moves are decided by code. Hard rules (grace period, 7-day cooldown, 60-day escalation, incentive policy, flagged text) always win. Drafts still need approval.",
+      },
+      untrusted: { customerNames: Object.fromEntries(customers.map((c) => [c.customer, names[c.customer] ?? null])) },
+    };
+  },
+
   async get_summary(_i, ctx) {
     const { invoices, truncated } = await ctx.listAll();
     const s = stats(invoices, ctx.today);

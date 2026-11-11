@@ -40,7 +40,7 @@ export default async function IncentivesPage() {
         <p className="muted">
           No offer is made on invoices whose text was flagged as suspicious (for example a note asking for a discount). Saving a change makes reminders already waiting for approval stale: re-run the agent to redraft them under the new policy.
         </p>
-        <PolicyForm initial={p} minDays={GRACE_DAYS} maxDays={ESCALATE_AFTER_DAYS} />
+        <PolicyForm initial={p} initialCashTarget={current.director.cashTarget14d} minDays={GRACE_DAYS} maxDays={ESCALATE_AFTER_DAYS} />
       </section>
 
       <section className="card stats" style={{ marginTop: 16 }}>

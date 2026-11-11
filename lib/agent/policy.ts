@@ -87,6 +87,11 @@ export const paymentPlanPolicySchema = z.object({
 }).strict();
 export type PaymentPlanPolicy = z.infer<typeof paymentPlanPolicySchema>;
 
+/** The owner's input to the Director: cash needed in the next 14 days (0 = no target). */
+export const directorSettingsSchema = z.object({ cashTarget14d: z.number().min(0).max(10_000_000) }).strict();
+export type DirectorSettings = z.infer<typeof directorSettingsSchema>;
+export const DIRECTOR_DEFAULT: DirectorSettings = { cashTarget14d: 0 };
+
 /** Used until the owner saves a policy: offers are off. */
 export const OFFERS_OFF: PaymentPlanPolicy = { enabled: false, minInvoiceAmount: 500, minDaysOverdue: 14, maxParts: 3, minPaymentAmount: 100 };
 
@@ -141,15 +146,27 @@ export type DraftPlan =
       offer: Offer | null; offerWhy: string }
   | { invoiceId: string; action: "escalate"; reason: string; record: InvoiceRecord };
 
-/** `policy` defaults to offers off, so a caller that forgets it can never enable an offer. */
+/** Director move → drafting tone (code-decided). */
+const DIRECTOR_TONE: Record<string, Tone> = { friendly: "friendly", firm: "firm", payment_plan: "firm", final_notice: "final_notice" };
+
+/**
+ * `policy` defaults to offers off, so a caller that forgets it can never enable an offer.
+ * With a Director note on the record, the tone comes from its move and an offer is allowed only
+ * when its move is "payment_plan" (and the policy still allows it). Without one (the Director
+ * couldn't run, or a frozen fixture), the age bucket decides the tone, as before.
+ */
 export function planFor(r: InvoiceRecord, policy: PaymentPlanPolicy = OFFERS_OFF): DraftPlan {
-  const tone = toneFor(r.daysOverdue);
-  if (!tone) {
+  const ageTone = toneFor(r.daysOverdue);
+  if (!ageTone) {
     // No day count in the stored reason: it would go stale. Displays add the current count.
     return { invoiceId: r.invoiceId, action: "escalate", record: r,
       reason: `More than ${ESCALATE_AFTER_DAYS} days overdue: policy routes it to a human, no automated reminder` };
   }
-  const { offer, why } = offerFor(r, policy);
+  const d = r.director;
+  const tone = (d && DIRECTOR_TONE[d.move]) || ageTone;
+  const { offer, why } = d && d.move !== "payment_plan"
+    ? { offer: null, why: `the Director's move is "${d.move.replace("_", " ")}", not a payment plan` }
+    : offerFor(r, policy);
   return { invoiceId: r.invoiceId, action: "draft", tone, facts: requiredFacts(r), record: r, offer, offerWhy: why };
 }
 

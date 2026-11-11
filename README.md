@@ -44,6 +44,40 @@ The form shows every finding next to its field. If any errors remain, the owner 
 - Photos are untrusted input and are not stored. The browser re-encodes them (max 2000 px, which drops EXIF/GPS), the server holds the bytes in memory for the two model calls, and the audit log keeps only a sha256, size and outcome.
 - Each intake has a cost cap, `KAIROS_INTAKE_COST_CAP` (default $0.15; a typical photo costs about $0.017). The shared daily cap also applies.
 
+## The Kairos Director: collections pacing
+
+*Getting paid is a timing problem.* The Director is inspired by the AI Director in Left 4 Dead, which reads how the players are doing and paces the game. It reads each customer's history and recent signals and decides, in code, what Kairos should propose for each overdue invoice and when (`lib/director/`). No model decides anything here, and the same inputs always give the same plan.
+
+**Pressure (0–100) per open invoice**, built from named factors:
+- **Money at stake:** the amount due and its share of everything you're owed.
+- **How late:** days overdue.
+- **Customer history:** average days late, and whether past reminders were followed by a payment within 7 days. Reminders on this invoice with no payment since add pressure.
+- **Recent signals:** a part payment on the invoice, or a PayPal payment from the customer (Transaction Search) in the last 7 days, is relief. Pressure drops and the Director pauses.
+- **Relationship:** lifetime paid and on-time ratio make it gentler.
+- **Your cash need:** if the 14-day forecast falls short of the cash target you set on Incentives, the largest, most likely payers get more pressure.
+
+**Output per invoice:**
+- **The next move on the ladder:** wait (< 20), friendly (< 45), firm (< 60), then an offer to pay in parts if your incentive policy allows it and no plan was offered before. A final notice needs 80+ pressure and 21+ days overdue; otherwise the move is firm. Escalate is the existing 60-day rule.
+- **A suggested day:** the customer's usual payment weekday, unless pressure is 60+. It is never inside the 7-day cooldown.
+- **A one-line reason** naming the top factors.
+
+**Hard rules always win:** the grace period, the cooldown, the 60-day escalation, the incentive policy and flagged invoice text. The Director only decides what to propose and when. A run drafts only the invoices whose move isn't "wait" and whose day is today, highest pressure first. Drafts still go drafter → critic + code checks → Approvals. The drafting tone comes from the Director's move instead of the age bucket, and a pay-in-parts offer is allowed only on an "offer payment plan" move. When you ask the chat to draft a specific invoice, the Director's "wait" doesn't hold your request back; the hard rules still apply. The Director's parameters, and your cash target, are part of the rules version.
+
+**Where to see it:**
+- the **Director** page (`/director`): each customer with a pressure meter, next move, day and reason, plus the 14-day cash forecast with a confidence note;
+- the pressure and reason on every Approvals card;
+- the chat's read-only `get_director_plan` tool ("who should I focus on this week, and why?").
+
+The Director reads PayPal only through the agent's read-only door, plus Transaction Search and the send ledger. `scripts/check-boundaries.mjs` keeps `lib/director/` free of model calls and writes, and keeps `lib/director/model.ts` pure.
+
+**Demo data:** the daily reset seeds payment histories so the Director makes different calls:
+- **Daniel** pays on time, on Fridays, so his overdue invoice gets **wait**.
+- **Maya** pays 40–50 days late and owes $2,350, so she gets **offer payment plan**.
+- **Tom** part-paid two days ago, so he gets **pause**.
+- **Priya** is new, so her small invoice gets a **friendly** reminder and her 75-day invoice is **escalated**.
+
+If no incentive policy has ever been saved, the reset saves a demo default (pay in parts on, $1,500 cash target). A policy you've saved, even one that's off, is never changed.
+
 ## Pay in parts (owner-defined payment plans)
 
 Getting paid sometimes means letting a customer pay part now. On **Incentives** (`/settings/incentives`) the owner turns this on and sets the limits: minimum amount due, minimum days overdue, maximum number of parts and minimum payment per part. This is PayPal's **partial payments** on the invoice: the customer chooses when to pay each part. It is not an auto-charged installment plan.

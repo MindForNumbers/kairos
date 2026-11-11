@@ -4,6 +4,8 @@ import { getStore, type Proposal, type ProposalStatus } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "./paypal-read";
 import { ESCALATE_AFTER_DAYS, GRACE_DAYS } from "./policy";
 import { cleanUntrusted, flagUntrusted } from "./untrusted";
+import { loadDirectorPlan } from "@/lib/director/gather";
+import type { DirectorPlan } from "@/lib/director/model";
 
 /**
  * Sweep: READ-ONLY. Lists invoices, finds overdue ones, ranks them, and decides in code
@@ -44,7 +46,11 @@ export type InvoiceRecord = {
   };
   /** Heuristic hints that the free text contains instructions or concession requests. */
   flags: string[];
+  /** The Director's call for this invoice (absent when it couldn't run: age-based tone applies). */
+  director?: DirectorNote;
 };
+
+export type DirectorNote = { pressure: number; move: string; day: string | null; reason: string };
 
 export type SweepResult = {
   asOf: string;
@@ -55,7 +61,7 @@ export type SweepResult = {
   /** Overdue and eligible, but beyond this run's set. Next run. */
   deferred: InvoiceRecord[];
   /** Overdue but held back by code, with the reason. */
-  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "in_queue" | "needs_human"; detail: string }[];
+  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "in_queue" | "needs_human" | "director_wait" | "director_scheduled"; detail: string }[];
   openNotDue: { invoiceId: string; invoiceNumber: string | null; dueDate: string; amountDue: string | null }[];
   counts: { listed: number; open: number; overdue: number };
   truncated: boolean;
@@ -80,6 +86,7 @@ function severityOf(daysOverdue: number): InvoiceRecord["severity"] {
  */
 export function compareUrgency(a: InvoiceRecord, b: InvoiceRecord): number {
   return (
+    (b.director?.pressure ?? -1) - (a.director?.pressure ?? -1) ||
     b.severity - a.severity ||
     Number(b.amountDue ?? 0) - Number(a.amountDue ?? 0) ||
     b.daysOverdue - a.daysOverdue ||
@@ -154,6 +161,17 @@ export async function sweep(opts: SweepOptions = {}): Promise<SweepResult> {
   const truncated = listed.truncated;
   const invoices = opts.only ? listed.invoices.filter((i) => opts.only!.includes(i.id)) : listed.invoices;
 
+  // The Director reads the WHOLE account (history), not just the "only" subset. If it can't run,
+  // the sweep carries on with age-based tones (and says so in the audit row).
+  let plan: DirectorPlan | null = null;
+  let directorError: string | null = null;
+  try {
+    plan = await loadDirectorPlan({ invoices: listed.invoices, today });
+  } catch (err) {
+    directorError = (err as Error).message;
+  }
+  const moveOf = new Map((plan?.moves ?? []).map((m) => [m.invoiceId, m]));
+
   const open = invoices.filter((inv) => CHASEABLE.has(inv.status) && dueDateOf(inv));
   const overdueSummaries = open.filter((inv) => daysBetween(dueDateOf(inv)!, today) > 0);
   const openNotDue = open
@@ -187,7 +205,23 @@ export async function sweep(opts: SweepOptions = {}): Promise<SweepResult> {
     const full = await fetchInvoice(summary.id);
     if (!CHASEABLE.has(full.status) || !dueDateOf(full)) continue;
     const record = toRecord(full, today, last?.sentAt ?? null);
-    if (record.daysOverdue >= GRACE_DAYS) eligible.push(record);
+    if (record.daysOverdue < GRACE_DAYS) continue;
+    const m = moveOf.get(record.invoiceId);
+    if (m) {
+      record.director = { pressure: m.pressure, move: m.move, day: m.day, reason: m.reason };
+      // The Director decides what to propose and when, except for an owner's explicit request ("only").
+      if (!opts.only && record.daysOverdue <= ESCALATE_AFTER_DAYS) {
+        if (m.move === "wait") {
+          excluded.push({ invoiceId: record.invoiceId, invoiceNumber: record.invoiceNumber, daysOverdue: days, reason: "director_wait", detail: m.reason });
+          continue;
+        }
+        if (m.day && m.day > today) {
+          excluded.push({ invoiceId: record.invoiceId, invoiceNumber: record.invoiceNumber, daysOverdue: days, reason: "director_scheduled", detail: m.reason });
+          continue;
+        }
+      }
+    }
+    eligible.push(record);
   }
 
   const { candidates, deferred } = chooseRunSet(eligible);
@@ -216,6 +250,7 @@ export async function sweep(opts: SweepOptions = {}): Promise<SweepResult> {
       deferred: result.deferred.map((c) => c.invoiceId),
       excluded: result.excluded.map((e) => ({ id: e.invoiceId, reason: e.reason })),
       flagged: eligible.filter((r) => r.flags.length).map((r) => ({ id: r.invoiceId, flags: r.flags })),
+      director: plan ? { forecast: { expectedCents: plan.forecast.expectedCents, shortfallCents: plan.forecast.shortfallCents }, moves: plan.moves.map((m) => [m.invoiceNumber ?? m.invoiceId, m.pressure, m.move, m.day]) } : { error: directorError },
       truncated,
       only: opts.only ?? null,
     },

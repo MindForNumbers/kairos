@@ -81,8 +81,8 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
   const store = getStore();
   const s = await (hooks.sweep ?? (() => sweep({ only: hooks.only })))();
   // The owner's policy is read ONCE per run: every plan, prompt and proposal stamp uses the same one.
-  const { policy } = await currentPolicy();
-  const RULES_VERSION = rulesVersionFor(policy);
+  const { policy, director } = await currentPolicy();
+  const RULES_VERSION = rulesVersionFor(policy, director);
   const run = await store.createRun(s);
   const budget = createBudget(run.id);
 

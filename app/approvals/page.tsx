@@ -13,6 +13,7 @@ import { isStale, liveApproval } from "@/lib/queue/actions";
 import { currentRulesVersion } from "@/lib/agent/rules-version";
 import { ApproveControls, ResolveControls } from "./Controls";
 import RunAgentButton from "./RunAgentButton";
+import Meter from "../Meter";
 import { DRAFTER_MODEL, criticModel } from "@/lib/llm/client";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,7 @@ export default async function AgentPage() {
         return (
           <article key={p.id} className="card proposal">
             <InvoiceHeader p={p} rec={rec} today={today} stale={isStale(p, RULES_VERSION)} />
+            {rec?.director && <DirectorLine d={rec.director} />}
             <Draft p={p} />
             <Checks review={p.review as Review | null} />
             {history.length > 0 && <History history={history} />}
@@ -182,6 +184,15 @@ function InvoiceHeader({ p, rec, today, stale }: { p: Proposal; rec: InvoiceReco
         </div>
       )}
     </header>
+  );
+}
+
+function DirectorLine({ d }: { d: NonNullable<InvoiceRecord["director"]> }) {
+  return (
+    <div className="director-line" data-pressure={d.pressure}>
+      <Meter value={d.pressure} />
+      <div><strong>Director:</strong> {d.reason} <Link href="/director" className="muted">Director&apos;s plan</Link></div>
+    </div>
   );
 }
 

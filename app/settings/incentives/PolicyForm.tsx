@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 
 type Policy = { enabled: boolean; minInvoiceAmount: number; minDaysOverdue: number; maxParts: number; minPaymentAmount: number };
 
-export default function PolicyForm({ initial, minDays, maxDays }: { initial: Policy; minDays: number; maxDays: number }) {
+export default function PolicyForm({ initial, initialCashTarget, minDays, maxDays }: { initial: Policy; initialCashTarget: number; minDays: number; maxDays: number }) {
   const router = useRouter();
   const [p, setP] = useState(initial);
+  const [cash, setCash] = useState<number>(initialCashTarget);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const num = (k: keyof Policy) => (e: React.ChangeEvent<HTMLInputElement>) => setP({ ...p, [k]: e.target.value === "" ? NaN : Number(e.target.value) });
@@ -16,7 +17,7 @@ export default function PolicyForm({ initial, minDays, maxDays }: { initial: Pol
     e.preventDefault();
     setBusy(true); setMsg(null);
     try {
-      const res = await fetch("/api/settings/incentives", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentPlan: p }) });
+      const res = await fetch("/api/settings/incentives", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentPlan: p, director: { cashTarget14d: cash } }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const issues = (data.issues as { path: string[]; message: string }[] | undefined)?.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n");
@@ -40,6 +41,11 @@ export default function PolicyForm({ initial, minDays, maxDays }: { initial: Pol
         <div className="field"><label htmlFor="minPaymentAmount">Minimum payment per part ($)</label><input id="minPaymentAmount" type="number" min={1} step="0.01" value={Number.isNaN(p.minPaymentAmount) ? "" : p.minPaymentAmount} onChange={num("minPaymentAmount")} required /></div>
       </div>
       <p className="muted">Invoices over {maxDays} days overdue always go to a human, so offers apply between {minDays} and {maxDays} days.</p>
+      <h3>Director</h3>
+      <div className="row">
+        <div className="field"><label htmlFor="cashTarget14d">Cash you need in the next 14 days ($, 0 = no target)</label><input id="cashTarget14d" type="number" min={0} step="0.01" value={Number.isNaN(cash) ? "" : cash} onChange={(e) => setCash(e.target.value === "" ? NaN : Number(e.target.value))} required /></div>
+      </div>
+      <p className="muted">If the Director&apos;s 14-day forecast falls short of this, it adds pressure on the largest, most likely payers.</p>
       <button className="button primary" disabled={busy}>{busy ? "Saving…" : "Save new version"}</button>
       {msg && <p className={msg.ok ? "ok" : "error"} role="status">{msg.text}</p>}
     </form>
