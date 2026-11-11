@@ -205,3 +205,9 @@ input.flag-warn, textarea.flag-warn { border-color: var(--warn); }
 .kp-briefing-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.25rem; }
 .kp-briefing p:not(.kp-briefing-label) { white-space: pre-line; }
 a.kp-chip { text-decoration: none; display: inline-block; }
+
+/* Pay-in-parts offer on approval cards */
+.offer { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; line-height: 1.45; }
+.policy-form input[type="number"] { width: 100%; }
+.checkbox { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.checkbox input { width: auto; }

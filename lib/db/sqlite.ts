@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { now as clockNow, nowIso } from "../clock";
 import { hashDraft } from "./draft-hash";
 import type {
-  Approval, AuditEvent, ChatMessage, ClaimResult, LedgerEntry, Proposal, ProposalStatus, Run, Store,
+  Approval, AuditEvent, ChatMessage, ClaimResult, LedgerEntry, PolicyVersion, Proposal, ProposalStatus, Run, Store,
 } from "./types";
 
 // Each entry runs once, in order; PRAGMA user_version records progress.
@@ -189,6 +189,30 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX webhook_events_resource ON webhook_events(resource_id);
   `,
+  `
+  -- "Pay in parts" offer attached to a reminder (JSON), part of the immutable, hashed content.
+  ALTER TABLE proposals ADD COLUMN offer TEXT;
+  DROP TRIGGER proposals_content_immutable;
+  CREATE TRIGGER proposals_content_immutable BEFORE UPDATE ON proposals
+  WHEN NEW.id IS NOT OLD.id OR NEW.run_id IS NOT OLD.run_id OR NEW.parent_id IS NOT OLD.parent_id
+    OR NEW.revision IS NOT OLD.revision OR NEW.invoice_id IS NOT OLD.invoice_id OR NEW.kind IS NOT OLD.kind
+    OR NEW.tone IS NOT OLD.tone OR NEW.subject IS NOT OLD.subject OR NEW.note IS NOT OLD.note
+    OR NEW.draft_hash IS NOT OLD.draft_hash OR NEW.created_at IS NOT OLD.created_at
+    OR NEW.rules_version IS NOT OLD.rules_version OR NEW.offer IS NOT OLD.offer
+  BEGIN SELECT RAISE(ABORT, 'proposal content is immutable'); END;
+
+  -- The owner's incentive policy: every save is a new version; the latest is current.
+  CREATE TABLE incentive_policies (
+    version     INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at  TEXT NOT NULL,
+    actor       TEXT NOT NULL,
+    policy      TEXT NOT NULL
+  );
+  CREATE TRIGGER incentive_policies_no_update BEFORE UPDATE ON incentive_policies
+  BEGIN SELECT RAISE(ABORT, 'incentive_policies are append-only'); END;
+  CREATE TRIGGER incentive_policies_no_delete BEFORE DELETE ON incentive_policies
+  BEGIN SELECT RAISE(ABORT, 'incentive_policies are append-only'); END;
+  `,
 ];
 
 /** Proposal columns plus its resolution (if any). */
@@ -214,6 +238,7 @@ const toProposal = (r: Row): Proposal => ({
   status: r.status as ProposalStatus, reason: r.reason as string | null, review: unjson(r.review as string | null),
   createdAt: r.created_at as string, updatedAt: r.updated_at as string,
   rulesVersion: (r.rules_version as string | null) ?? null,
+  offer: unjson((r.offer as string | null) ?? null),
   resolution: r.r_action
     ? { action: r.r_action as "resolved" | "dismissed", note: r.r_note as string | null, actor: r.r_actor as string, at: r.r_at as string }
     : null,
@@ -229,6 +254,10 @@ const toLedger = (r: Row): LedgerEntry => ({
   id: r.id as string, invoiceId: r.invoice_id as string, source: r.source as LedgerEntry["source"],
   proposalId: r.proposal_id as string | null, approvalId: r.approval_id as string | null,
   subject: r.subject as string | null, note: r.note as string | null, actor: r.actor as string, sentAt: r.sent_at as string,
+});
+
+const toPolicy = (r: Row): PolicyVersion => ({
+  version: r.version as number, createdAt: r.created_at as string, actor: r.actor as string, policy: unjson(r.policy as string),
 });
 
 const toAudit = (r: Row): AuditEvent => ({
@@ -282,18 +311,19 @@ export function openSqliteStore(path: string): Store {
     },
 
     async createProposal(input) {
-      const content = { invoiceId: input.invoiceId, kind: input.kind, tone: input.tone, subject: input.subject, note: input.note };
+      const content = { invoiceId: input.invoiceId, kind: input.kind, tone: input.tone, subject: input.subject, note: input.note, offer: input.offer ?? null };
+      if (content.offer && content.kind !== "reminder") throw new Error("only reminders can carry an offer");
       const parent = input.parentId ? (getProposalRow.get(input.parentId) as Row | undefined) : undefined;
       if (input.parentId && !parent) throw new Error(`parent proposal ${input.parentId} not found`);
       if (parent && parent.invoice_id !== input.invoiceId) throw new Error("a revision must target the same invoice as its parent");
       const ts = now();
       const pid = id("prp");
       db.prepare(`INSERT INTO proposals
-        (id, run_id, parent_id, revision, invoice_id, kind, tone, subject, note, draft_hash, status, reason, created_at, updated_at, rules_version)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (id, run_id, parent_id, revision, invoice_id, kind, tone, subject, note, draft_hash, status, reason, created_at, updated_at, rules_version, offer)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         pid, input.runId, input.parentId ?? null, parent ? (parent.revision as number) + 1 : 0,
         content.invoiceId, content.kind, content.tone, content.subject, content.note, hashDraft(content),
-        input.status ?? "pending_review", input.reason ?? null, ts, ts, input.rulesVersion ?? null,
+        input.status ?? "pending_review", input.reason ?? null, ts, ts, input.rulesVersion ?? null, content.offer ? JSON.stringify(content.offer) : null,
       );
       return toProposal(getProposalRow.get(pid) as Row);
     },
@@ -467,6 +497,24 @@ export function openSqliteStore(path: string): Store {
       return (db.prepare("SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id").all(sid) as Row[]).map((r) => ({
         id: r.id as number, at: r.at as string, role: r.role as "user" | "assistant", kind: r.kind as ChatMessage["kind"], content: unjson(r.content as string),
       }));
+    },
+
+    async latestIncentivePolicy() {
+      const r = db.prepare("SELECT * FROM incentive_policies ORDER BY version DESC LIMIT 1").get() as Row | undefined;
+      return r ? toPolicy(r) : null;
+    },
+
+    async listIncentivePolicies(limit = 20) {
+      return (db.prepare("SELECT * FROM incentive_policies ORDER BY version DESC LIMIT ?").all(limit) as Row[]).map(toPolicy);
+    },
+
+    async appendIncentivePolicy(input) {
+      return db.transaction(() => {
+        const res = db.prepare("INSERT INTO incentive_policies (created_at, actor, policy) VALUES (?, ?, ?)").run(now(), input.actor, JSON.stringify(input.policy));
+        const row = toPolicy(db.prepare("SELECT * FROM incentive_policies WHERE version = ?").get(res.lastInsertRowid) as Row);
+        writeAudit({ actor: input.actor, event: "policy.incentives.saved", entityType: "incentive_policy", entityId: String(row.version), data: input.policy });
+        return row;
+      })();
     },
 
     async hasWebhookEvent(eventId) {

@@ -6,6 +6,7 @@ Invoicing and collections for a small business on PayPal (sandbox). Built on the
 - **Collections agent**: finds overdue invoices, drafts reminders, and checks each draft with a second model plus code checks. Drafts wait on **Approvals** (`/approvals`) and nothing is sent until the owner approves. Invoices more than 60 days overdue go to a human.
 - **Kairos chat**: a read-only assistant docked on every page. It answers questions about invoices, customers, the queue and sent reminders, and can request drafts, which still go to Approvals. On an empty conversation it opens with a briefing. Its numbers are computed in code from the same data as the home tiles; Haiku only phrases a template, cached per shape and regenerated at most once an hour. `get_report` gives aging, collected vs outstanding, top customers owing and reminder activity for a period.
 - **Invoice from a photo or voice note**: on **New invoice**, snap a job note or dictate one (Chrome). Kairos fills in the form, and the owner checks it and clicks Create.
+- **Pay in parts**: the owner sets a payment-plan policy on **Incentives** (`/settings/incentives`), and reminders for eligible invoices can offer to let the customer pay in parts through PayPal.
 
 ## Run it
 
@@ -43,6 +44,21 @@ The form shows every finding next to its field. If any errors remain, the owner 
 - Photos are untrusted input and are not stored. The browser re-encodes them (max 2000 px, which drops EXIF/GPS), the server holds the bytes in memory for the two model calls, and the audit log keeps only a sha256, size and outcome.
 - Each intake has a cost cap, `KAIROS_INTAKE_COST_CAP` (default $0.15; a typical photo costs about $0.017). The shared daily cap also applies.
 
+## Pay in parts (owner-defined payment plans)
+
+Getting paid sometimes means letting a customer pay part now. On **Incentives** (`/settings/incentives`) the owner turns this on and sets the limits: minimum amount due, minimum days overdue, maximum number of parts and minimum payment per part. This is PayPal's **partial payments** on the invoice: the customer chooses when to pay each part. It is not an auto-charged installment plan.
+
+- **Code decides.** Eligibility is computed in code: the policy is on, the amount and days are within the limits, and the invoice text isn't flagged as suspicious, so the prompt-injection invoice never gets an offer. Code also computes the terms: minimum per part = the policy minimum, raised to `amount due ÷ max parts` when needed, so there are never more than the maximum number of parts. The drafter only chooses `payment_plan` or `none` and never writes a number. Code inserts one fixed sentence, e.g. *"You can pay this invoice in up to 3 parts of at least $783.34 each."*, just before the closing line.
+- **Checked twice.** Check (b) is now "no concession outside the owner's policy". The note may contain exactly the code-rendered sentence, once, on an eligible invoice, with the policy's terms, or no offer at all. Any other wording about payment plans, parts or instalments, an offer on an ineligible invoice, different terms, and every discount, waiver or extension are blocked. The critic gets the policy and each invoice's one allowed sentence, and checks the same thing. The replay set has four cases for this: the 50% demand dressed up as an offer (blocked), an offer on an ineligible invoice (blocked), an over-limit offer (blocked) and a correct policy offer (must pass). They run with stubbed models in `npm test` and against the live critic with `npm run agent:replay`.
+- **Versioned.** Every save is a new, append-only version, and each save is audited. The policy values are part of the rules version (`r-<code>.p-<policy>`), so changing the policy makes waiting drafts stale: they can't be approved or sent until the agent re-runs.
+- **On approval**, the executor re-derives the terms from the live balance. It then turns on partial payments for the invoice with that minimum (one full-invoice update, `send_to_recipient=false`, one attempt), and only then sends the reminder.
+  - If turning partial payments on definitely failed, nothing is sent and the draft stays approvable.
+  - If the outcome is unknown, the existing rule applies: the token is not released and the item is blocked for a human.
+  - A sandbox test confirmed that this update works on an invoice already SENT, keeps it SENT and doesn't re-send it (`last_sent_time` unchanged).
+- The Approvals card shows **"Includes offer: pay in up to N parts of at least $X"**.
+
+**Next step: early-payment discounts** (e.g. "2% off if paid within 5 days"). They aren't built. They would need their own policy limits, a time-boxed amount change on the invoice, and a way to restore the full amount when the window closes.
+
 ## PayPal API code and the APIMatic plugin
 
 New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@context-plugins` v0.4.1, the `paypal:typescript-*` skills) and its generated SDK, the `paypal` package (PayPal Server SDK v2.29.0, pinned to commit `5d0df8a` over public https: `git+https://github.com/context-plugins/paypal-typescript-sdk.git#5d0df8a8817e5fdf2e2cd48e68f790ea4730aab2`). `npm ci` clones it without credentials and builds it with the SDK's `prepare` script, because the repo has no prebuilt `dist/`. npm rewrites a GitHub `resolved` URL to `git+ssh` on `npm install`, so after any `npm install`, check that `package-lock.json` still says `git+https`. That SDK covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**.
@@ -58,4 +74,4 @@ New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@c
 - `get_report`'s "collected" figure (PayPal-received payments plus payments recorded by hand on invoices, which Transaction Search never lists; it falls back to invoice records when Transaction Search is unavailable);
 - the briefing's "received through PayPal this week" figure, cached for 10 minutes.
 
-**Not built with the plugin:** every Invoicing API v2 call (`lib/paypal/`, hand-written, predating the plugin). That covers the invoices UI, the agent's reads, the executor's reminder send, the seed and cleanup scripts, and photo/voice intake's Create. The business-name field adds `billing_info.business_name` to that existing create request.
+**Not built with the plugin:** every Invoicing API v2 call (`lib/paypal/`, hand-written, predating the plugin). That covers the invoices UI, the agent's reads, the executor's reminder send, the seed and cleanup scripts, and photo/voice intake's Create. The business-name field adds `billing_info.business_name` to that existing create request. The executor's "turn on partial payments" update for pay-in-parts offers is also hand-written Invoicing code (`PUT /v2/invoicing/invoices/{id}`), because the plugin's SDK has no Invoicing operations to build it from.

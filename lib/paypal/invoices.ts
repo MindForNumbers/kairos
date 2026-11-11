@@ -26,6 +26,8 @@ export type Invoice = {
   items?: { name: string; description?: string; quantity: string; unit_amount: Money; tax?: { name: string; percent: string } }[];
   amount?: Money;
   due_amount?: Money;
+  /** PayPal returns more fields than these; a full update (PUT) sends the whole object back. */
+  configuration?: { partial_payment?: { allow_partial_payment?: boolean; minimum_amount_due?: Money }; [k: string]: unknown };
   payments?: { paid_amount?: Money; transactions?: { payment_id?: string; method?: string; payment_date?: string; amount?: Money; note?: string }[] };
 };
 

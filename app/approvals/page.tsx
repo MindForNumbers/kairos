@@ -5,12 +5,12 @@ import { dailySendCap, executorEnabled, inQuietHours, killActive, quietHours } f
 import { getStore, type Proposal, type Run } from "@/lib/db";
 import type { Issue } from "@/lib/agent/checks";
 import { CHECK_LABELS } from "@/lib/agent/checks";
-import { currentReason, formatAmount, formatDueDate } from "@/lib/agent/policy";
+import { currentReason, formatAmount, formatDueDate, offerLabel } from "@/lib/agent/policy";
 import type { InvoiceRecord, SweepResult } from "@/lib/agent/sweep";
 import type { RunReport } from "@/lib/agent/pipeline";
 import { costCaps } from "@/lib/agent/budget";
 import { isStale, liveApproval } from "@/lib/queue/actions";
-import { RULES_VERSION } from "@/lib/agent/rules-version";
+import { currentRulesVersion } from "@/lib/agent/rules-version";
 import { ApproveControls, ResolveControls } from "./Controls";
 import RunAgentButton from "./RunAgentButton";
 import { DRAFTER_MODEL, criticModel } from "@/lib/llm/client";
@@ -56,6 +56,7 @@ export default async function AgentPage() {
   const quiet = quietHours();
   const quietNow = inQuietHours(localMinuteOfDay(), quiet);
   const sentToday = await store.countSendsSince(startOfLocalDay());
+  const RULES_VERSION = await currentRulesVersion();
   const lastRun = runs[0];
   const report = lastRun?.report as RunReport | null;
   const caps = costCaps();
@@ -81,7 +82,7 @@ export default async function AgentPage() {
         <div><label>Last run cost</label><div>{report?.cost ? `$${report.cost.totalUsd.toFixed(4)}` : "—"}</div><div className="muted">cap ${caps.runUsd.toFixed(2)} per run</div></div>
         <div><label>Spent today</label><div>${spentToday.toFixed(4)}</div><div className="muted">cap ${caps.dailyUsd.toFixed(2)} per day</div></div>
         <div><label>Models</label><div>{`${report?.models?.drafter?.length ? report.models.drafter.join(", ") : DRAFTER_MODEL} → ${report?.models?.critic?.length ? report.models.critic.join(", ") : criticModel()}`}</div><div className="muted">drafter → critic</div></div>
-        <div><label>Rules version</label><div data-rules-version={RULES_VERSION}>{RULES_VERSION}</div><div className="muted">drafts from other versions are stale</div></div>
+        <div><label>Rules version</label><div data-rules-version={RULES_VERSION}>{RULES_VERSION}</div><div className="muted">code + <Link href="/settings/incentives">incentive policy</Link>; drafts from other versions are stale</div></div>
         <div>
           <label>Sending</label>
           <div>{kill ? <span className="pill stale">KILL: halted</span> : enabled ? <span className="pill ok">Live</span> : <span className="pill warn">Dry run</span>}</div>
@@ -98,7 +99,7 @@ export default async function AgentPage() {
         const live = liveApproval(approvals);
         return (
           <article key={p.id} className="card proposal">
-            <InvoiceHeader p={p} rec={rec} today={today} />
+            <InvoiceHeader p={p} rec={rec} today={today} stale={isStale(p, RULES_VERSION)} />
             <Draft p={p} />
             <Checks review={p.review as Review | null} />
             {history.length > 0 && <History history={history} />}
@@ -106,7 +107,7 @@ export default async function AgentPage() {
               proposalId={p.id}
               inFlight={!!live}
               live={enabled}
-              stale={isStale(p) ? { made: p.rulesVersion, current: RULES_VERSION } : null}
+              stale={isStale(p, RULES_VERSION) ? { made: p.rulesVersion, current: RULES_VERSION } : null}
             />
           </article>
         );
@@ -117,7 +118,7 @@ export default async function AgentPage() {
       {humanCards.length === 0 && <div className="card muted">Nothing needs a human.</div>}
       {humanCards.map(({ p, rec, history }) => (
         <article key={p.id} className="card proposal human">
-          <InvoiceHeader p={p} rec={rec} today={today} />
+          <InvoiceHeader p={p} rec={rec} today={today} stale={false} />
           <p className="reason"><strong>{p.status === "escalated" ? "Escalated" : "Blocked"}:</strong> {currentReason(p.reason, rec ? Math.max(0, daysBetween(rec.dueDate, today)) : null)}</p>
           {p.kind === "reminder" && <Draft p={p} />}
           {p.kind === "reminder" && <Checks review={p.review as Review | null} />}
@@ -161,7 +162,7 @@ function fmtTime(iso: string) {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: process.env.KAIROS_TIMEZONE || "America/Los_Angeles" }).format(new Date(iso));
 }
 
-function InvoiceHeader({ p, rec, today }: { p: Proposal; rec: InvoiceRecord | null; today: string }) {
+function InvoiceHeader({ p, rec, today, stale }: { p: Proposal; rec: InvoiceRecord | null; today: string; stale: boolean }) {
   const days = rec ? daysBetween(rec.dueDate, today) : null;
   return (
     <header className="proposal-head">
@@ -170,7 +171,7 @@ function InvoiceHeader({ p, rec, today }: { p: Proposal; rec: InvoiceRecord | nu
           <Link href={`/invoices/${p.invoiceId}`}>{rec?.invoiceNumber ?? p.invoiceId}</Link>
           {p.tone && <span className={`pill tone-${p.tone}`}>{TONE_LABEL[p.tone] ?? p.tone}</span>}
           {p.revision > 0 && <span className="pill">revision {p.revision}</span>}
-          {p.kind === "reminder" && ["passed", "approved"].includes(p.status) && isStale(p) && <span className="pill stale">stale: re-run</span>}
+          {p.kind === "reminder" && ["passed", "approved"].includes(p.status) && stale && <span className="pill stale">stale: re-run</span>}
         </div>
         <div className="muted">{rec?.recipientEmail ?? "—"}</div>
       </div>
@@ -189,6 +190,12 @@ function Draft({ p }: { p: Proposal }) {
     <div className="draft">
       <div className="subject"><label>Subject</label>{p.subject}</div>
       <div className="note"><label>Note PayPal will email</label><div className="note-text">{p.note}</div></div>
+      {p.offer && (
+        <div className="offer" data-offer>
+          <strong>Includes offer:</strong> {offerLabel(p.offer)}.{" "}
+          <span className="muted">On approval, Kairos turns on PayPal partial payments for this invoice with a {formatAmount(p.offer.minimumAmount, p.offer.currency)} minimum (the customer isn&apos;t notified of the change), then sends the reminder. The customer chooses how much to pay each time; nothing is charged automatically.</span>
+        </div>
+      )}
     </div>
   );
 }

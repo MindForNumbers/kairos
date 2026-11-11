@@ -36,13 +36,21 @@ export type ProposalStatus =
   | "skipped"        // the executor declined (paid, cap, quiet hours, KILL…)
   | "rejected";      // a human rejected it
 
+/** A code-computed "pay in parts" offer attached to a reminder (lib/agent/policy.ts Offer). */
+export type DraftOffer = { kind: "payment_plan"; parts: number; minimumAmount: string; currency: string };
+
 export type DraftContent = {
   invoiceId: string;
   kind: ProposalKind;
   tone: string | null;
   subject: string | null;
   note: string | null;
+  /** Part of the approved content: the executor enables exactly these terms. null/absent = no offer. */
+  offer?: DraftOffer | null;
 };
+
+/** One saved version of the owner's incentive policy. Append-only; the latest is current. */
+export type PolicyVersion = { version: number; createdAt: string; actor: string; policy: unknown };
 
 export type Proposal = DraftContent & {
   id: string;
@@ -168,6 +176,11 @@ export interface Store {
   getChatSession(id: string): Promise<{ id: string; createdAt: string } | null>;
   appendChatMessage(m: { sessionId: string; role: "user" | "assistant"; kind: ChatMessageKind; content: unknown }): Promise<number>;
   listChatMessages(sessionId: string): Promise<ChatMessage[]>;
+
+  // Owner's incentive policy (append-only versions; the latest one is current)
+  latestIncentivePolicy(): Promise<PolicyVersion | null>;
+  listIncentivePolicies(limit?: number): Promise<PolicyVersion[]>;
+  appendIncentivePolicy(input: { policy: unknown; actor: string }): Promise<PolicyVersion>;
 
   // Webhooks (PayPal delivers at least once)
   hasWebhookEvent(eventId: string): Promise<boolean>;

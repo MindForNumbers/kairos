@@ -39,11 +39,11 @@ test("untrusted text cannot break out of its tag", () => {
 test("reconcile: tone from code, unknown/duplicate dropped, missing reported, policy escalations kept", () => {
   const plans = [planFor(rec("INV2-A", 5)), planFor(rec("INV2-B", 12)), planFor(rec("INV2-C", 75)), planFor(rec("INV2-D", 40))];
   const out = { drafts: [
-    { invoiceId: "INV2-A", action: "remind" as const, subject: "S", body: "N", escalationReason: null },
-    { invoiceId: "INV2-A", action: "remind" as const, subject: "S2", body: "N2", escalationReason: null },
-    { invoiceId: "INV2-ZZ", action: "remind" as const, subject: "S", body: "N", escalationReason: null },
-    { invoiceId: "INV2-C", action: "remind" as const, subject: "S", body: "N", escalationReason: null },
-    { invoiceId: "INV2-B", action: "escalate" as const, subject: null, body: null, escalationReason: "customer says they paid" },
+    { invoiceId: "INV2-A", action: "remind" as const, subject: "S", body: "N", offer: "none" as const, escalationReason: null },
+    { invoiceId: "INV2-A", action: "remind" as const, subject: "S2", body: "N2", offer: "none" as const, escalationReason: null },
+    { invoiceId: "INV2-ZZ", action: "remind" as const, subject: "S", body: "N", offer: "none" as const, escalationReason: null },
+    { invoiceId: "INV2-C", action: "remind" as const, subject: "S", body: "N", offer: "none" as const, escalationReason: null },
+    { invoiceId: "INV2-B", action: "escalate" as const, subject: null, body: null, offer: "none" as const, escalationReason: "customer says they paid" },
   ] };
   const r = reconcile(plans, out, null);
   assert.deepEqual(r.drafts.map((d) => [d.invoiceId, d.tone, d.subject]), [["INV2-A", "friendly", "S"]]);

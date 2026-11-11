@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
   { href: "/invoices", label: "Invoices", match: (p: string) => p.startsWith("/invoices") },
   { href: "/approvals", label: "Approvals", match: (p: string) => p.startsWith("/approvals") },
+  { href: "/settings/incentives", label: "Incentives", match: (p: string) => p.startsWith("/settings") },
 ];
 
 export default function NavLinks({ approvals }: { approvals: number }) {

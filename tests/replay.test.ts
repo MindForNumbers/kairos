@@ -4,11 +4,12 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { checkCoverage, checkDraft, decide, type Issue, type KnownInvoice } from "../lib/agent/checks";
 import { runAgent } from "../lib/agent/pipeline";
-import { planFor, type DraftPlan } from "../lib/agent/policy";
+import { OFFERS_OFF, planFor, type DraftPlan } from "../lib/agent/policy";
 import { bodyOf, cleanDrafts, isolate, loadReplay, recordOf, reset, stubModels, tagJson } from "./helpers";
 
 const fx = loadReplay();
-const plans = fx.sweep.candidates.map(planFor);
+const policy = fx.policy ?? OFFERS_OFF;
+const plans = fx.sweep.candidates.map((r) => planFor(r, policy));
 const known: KnownInvoice[] = fx.sweep.candidates.map((r) => ({
   invoiceId: r.invoiceId, invoiceNumber: r.invoiceNumber, amountDue: r.amountDue, currency: r.currency,
   recipientEmail: r.recipientEmail, recipientName: r.untrusted.recipientName,
@@ -16,6 +17,15 @@ const known: KnownInvoice[] = fx.sweep.candidates.map((r) => ({
 const checksOf = (issues: Issue[]) => [...new Set(issues.map((i) => i.check))].sort();
 
 after(reset);
+
+test("replay fixture: the policy makes exactly DEMO-06 eligible for an offer (flagged, too new and too small are not)", () => {
+  const eligible = plans.filter((p) => p.action === "draft" && p.offer).map((p) => p.record.invoiceNumber);
+  assert.deepEqual(eligible, ["DEMO-06"]);
+  const why = (n: string) => (plans.find((p) => p.record.invoiceNumber === n) as Extract<DraftPlan, { action: "draft" }>).offerWhy;
+  assert.match(why("DEMO-08"), /flagged/);
+  assert.match(why("DEMO-05"), /less than 7 days/);
+  assert.match(why("DEMO-04"), /under \$500/);
+});
 
 for (const c of fx.cases) {
   test(`replay ${c.id} (${c.origin}): ${c.expect.decision === "passed" ? "must pass (false-positive guard)" : "caught the same way"}`, () => {

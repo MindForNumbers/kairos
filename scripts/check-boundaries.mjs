@@ -85,6 +85,16 @@ const rules = [
       [...src.matchAll(/transactionSearch\.(\w+)/g)].every((m) => m[1] === "searchTransactions"),
   },
   {
+    name: "Only lib/executor/ updates (PUT) an existing invoice or turns on partial payments for one (the owner's create call in lib/paypal/invoices.ts may set it on a new invoice)",
+    applies: (f) => /^(lib|app|scripts)\//.test(f) && !f.startsWith("lib/executor/") && f !== "scripts/check-boundaries.mjs",
+    check: (src, f) => !/method:\s*["']PUT["']/.test(src) && (f === "lib/paypal/invoices.ts" || !/allow_partial_payment["']?\s*:\s*true/.test(src)),
+  },
+  {
+    name: "The drafter never writes offer terms: lib/agent/ renders them from the owner's policy (offerSentence), the model only picks payment_plan or none",
+    applies: (f) => f === "lib/agent/drafter.ts",
+    check: (src) => /offer:\s*z\.enum\(\["payment_plan",\s*"none"\]\)/.test(src) && !/z\.object\(\{[^}]*\b(parts|minimumAmount)\b/.test(src),
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,
@@ -95,7 +105,7 @@ let failed = 0;
 for (const f of files) {
   const src = readFileSync(f, "utf8");
   for (const r of rules) {
-    if (r.applies(f) && (r.forbid ? r.forbid.test(src) : !r.check(src))) {
+    if (r.applies(f) && (r.forbid ? r.forbid.test(src) : !r.check(src, f))) {
       console.error(`✗ ${f}: ${r.name}`);
       failed++;
     }

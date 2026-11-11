@@ -1,7 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { getStore, hashDraft, type Approval, type Proposal, type ResolutionAction } from "@/lib/db";
-import { RULES_VERSION } from "@/lib/agent/rules-version";
+import { currentRulesVersion } from "@/lib/agent/rules-version";
 import { executeApproval, type ExecutionResult } from "@/lib/executor/execute";
 import { hashToken } from "@/lib/executor/token";
 
@@ -18,9 +18,12 @@ export class QueueError extends Error {
   }
 }
 
-/** Made (and reviewed) under different rules than the ones running now. Never approvable. */
-export function isStale(p: Pick<Proposal, "rulesVersion">): boolean {
-  return p.rulesVersion !== RULES_VERSION;
+/**
+ * Made (and reviewed) under different rules than the ones running now, including a different
+ * incentive policy. Never approvable. `current` comes from currentRulesVersion().
+ */
+export function isStale(p: Pick<Proposal, "rulesVersion">, current: string): boolean {
+  return p.rulesVersion !== current;
 }
 
 export { hashToken };
@@ -54,8 +57,9 @@ export async function approveProposal(proposalId: string, actor: string): Promis
   const p = await store.getProposal(proposalId);
   if (!p) throw new QueueError(404, "NOT_FOUND", "Proposal not found");
   if (p.kind !== "reminder") throw new QueueError(409, "NOT_APPROVABLE", "Escalations can't be approved");
-  if (isStale(p)) {
-    throw new QueueError(409, "STALE_RULES", `Drafted under rules ${p.rulesVersion ?? "(unversioned)"}, current rules are ${RULES_VERSION}. Reject it and re-run the agent.`);
+  const rules = await currentRulesVersion();
+  if (isStale(p, rules)) {
+    throw new QueueError(409, "STALE_RULES", `Drafted under rules ${p.rulesVersion ?? "(unversioned)"}, current rules are ${rules} (code or incentive policy changed). Reject it and re-run the agent.`);
   }
 
   // Integrity: the stored hash must still describe the stored content.

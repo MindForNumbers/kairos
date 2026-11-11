@@ -4,7 +4,10 @@ import { createSessionValue, checkPassword, passwordConfigured, safeNext, sameOr
 import { APPROVAL_TTL_MS, QueueError, approveProposal, hashToken, rejectProposal, resolveProposal } from "../lib/queue/actions";
 import { setClockForTesting } from "../lib/clock";
 import { holdingProposal } from "../lib/agent/sweep";
-import { RULES_VERSION } from "../lib/agent/rules-version";
+import { RULES_VERSION as CODE_RULES_VERSION, rulesVersionFor } from "../lib/agent/rules-version";
+import { OFFERS_OFF } from "../lib/agent/policy";
+/** The current rules version with no policy saved (offers off). */
+const RULES_VERSION = rulesVersionFor(OFFERS_OFF);
 import { isolate, loadReplay, reset } from "./helpers";
 
 const fx = loadReplay();
@@ -122,7 +125,8 @@ test("sweep hold: queued and unresolved items hold their invoice; resolved/dismi
 });
 
 test("rules version: stable fingerprint; proposals made under other rules can't be approved", async () => {
-  assert.match(RULES_VERSION, /^r-[0-9a-f]{12}$/);
+  assert.match(CODE_RULES_VERSION, /^r-[0-9a-f]{12}$/);
+  assert.match(RULES_VERSION, /^r-[0-9a-f]{12}\.p-[0-9a-f]{8}$/);
   const { store } = await seedQueue();
   const run = (await store.listRuns(1))[0];
   const r = fx.sweep.candidates.find((c) => c.invoiceNumber === "DEMO-04")!;

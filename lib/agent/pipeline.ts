@@ -4,8 +4,9 @@ import { CostCapError, costCaps, createBudget } from "./budget";
 import { checkCoverage, checkDraft, decide, type Issue, type KnownInvoice } from "./checks";
 import { critique, type CriticResult } from "./critic";
 import { draft, type Draft, type DraftBatch, type RevisionFeedback } from "./drafter";
+import { currentPolicy } from "./incentives";
 import { planFor, type DraftPlan } from "./policy";
-import { RULES_VERSION } from "./rules-version";
+import { rulesVersionFor } from "./rules-version";
 import { sweep, type InvoiceRecord, type SweepResult } from "./sweep";
 
 /**
@@ -79,6 +80,9 @@ function knownInvoices(s: SweepResult): KnownInvoice[] {
 export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
   const store = getStore();
   const s = await (hooks.sweep ?? (() => sweep({ only: hooks.only })))();
+  // The owner's policy is read ONCE per run: every plan, prompt and proposal stamp uses the same one.
+  const { policy } = await currentPolicy();
+  const RULES_VERSION = rulesVersionFor(policy);
   const run = await store.createRun(s);
   const budget = createBudget(run.id);
 
@@ -91,7 +95,7 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
   const models = { drafter: new Set<string>(), critic: new Set<string>() };
   let round = 0;
   let halted: RunReport["halted"] = null;
-  const plans = s.candidates.map(planFor);
+  const plans = s.candidates.map((r) => planFor(r, policy));
   const recordById = new Map(s.candidates.map((r) => [r.invoiceId, r]));
   const numberOf = (id: string) => recordById.get(id)?.invoiceNumber ?? null;
 
@@ -117,7 +121,7 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
       if (batch.meta) models.drafter.add(batch.meta.model);
       for (const d of batch.drafts) {
         const parent = current.get(d.invoiceId)?.proposal;
-        const p = await store.createProposal({ runId: run.id, parentId: parent?.id ?? null, invoiceId: d.invoiceId, kind: "reminder", tone: d.tone, subject: d.subject, note: d.note, rulesVersion: RULES_VERSION });
+        const p = await store.createProposal({ runId: run.id, parentId: parent?.id ?? null, invoiceId: d.invoiceId, kind: "reminder", tone: d.tone, subject: d.subject, note: d.note, offer: d.offer ?? null, rulesVersion: RULES_VERSION });
         if (parent) await store.updateProposalStatus(parent.id, { status: "revised" }, ["pending_review"]);
         current.set(d.invoiceId, { proposal: p, draft: d });
       }
@@ -138,7 +142,7 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
       settled.set(id, { invoiceId: id, invoiceNumber: numberOf(id), outcome, proposalId: p.id, reason });
     };
 
-    let batch = await draft(s.candidates, { budget });
+    let batch = await draft(s.candidates, { budget, policy });
     batch = hooks.afterDraft?.(0, batch, s.candidates) ?? batch;
     await persist(batch);
 
@@ -150,7 +154,7 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
       let critic: CriticResult | null = null;
       if (underReview.length) {
         critic = await critique({
-          records: s.candidates, plans, deferred: s.deferred, underReview, alreadyCovered: [...settled.keys()],
+          records: s.candidates, plans, deferred: s.deferred, underReview, alreadyCovered: [...settled.keys()], policy,
         }, round, budget);
         models.critic.add(critic.meta.model);
         if (round === 0) urgencyWarnings.push(...critic.urgencyWarnings);
@@ -205,7 +209,7 @@ export async function runAgent(hooks: PipelineHooks = {}): Promise<RunReport> {
       const feedback: RevisionFeedback[] = [...toRevise].map(([invoiceId, issues]) => ({
         invoiceId, issues: issues.filter((i) => i.check === "a" || i.check === "d" || i.check === "e").map(({ check, problem }) => ({ check, problem })),
       }));
-      batch = await draft(s.candidates.filter((r) => toRevise.has(r.invoiceId)), { feedback, budget });
+      batch = await draft(s.candidates.filter((r) => toRevise.has(r.invoiceId)), { feedback, budget, policy });
       batch = hooks.afterDraft?.(round + 1, batch, s.candidates) ?? batch;
       await persist(batch);
     }

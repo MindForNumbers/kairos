@@ -6,7 +6,7 @@ import { setClockForTesting } from "../lib/clock";
 import { setTransportForTesting, type TransportRequest, type TransportResponse } from "../lib/llm/client";
 import type { Issue } from "../lib/agent/checks";
 import type { Draft } from "../lib/agent/drafter";
-import { CLOSING_LINE } from "../lib/agent/policy";
+import { CLOSING_LINE, type PaymentPlanPolicy } from "../lib/agent/policy";
 import type { InvoiceRecord, SweepResult } from "../lib/agent/sweep";
 
 export type ReplayCase = {
@@ -17,7 +17,8 @@ export type ReplayCase = {
   recordedCritic: Issue[] | null;
   expect: { decision: "passed" | "revise" | "blocked"; criticFails: string[]; codeFails: string[] };
 };
-export type ReplayFixture = { source: string; sweep: SweepResult; cases: ReplayCase[] };
+/** `policy`: the owner's payment-plan policy the cases are judged under (offer cases need it on). */
+export type ReplayFixture = { source: string; sweep: SweepResult; cases: ReplayCase[]; policy?: PaymentPlanPolicy };
 
 export function loadReplay(): ReplayFixture {
   return JSON.parse(readFileSync(join(process.cwd(), "tests/fixtures/replay.json"), "utf8"));
@@ -84,8 +85,8 @@ export function passAll(user: string) {
   };
 }
 
-/** A clean drafter answer for every invoice in the prompt. */
-export function cleanDrafts(user: string, override: Record<string, string | null> = {}) {
+/** A clean drafter answer for every invoice in the prompt. `offers`: invoice numbers to choose payment_plan for. */
+export function cleanDrafts(user: string, override: Record<string, string | null> = {}, offers: string[] = []) {
   const facts = tagJson<{ invoiceId: string; invoiceNumber: string; amountDue: string; dueDate: string }[]>(user, "invoices_to_draft");
   return {
     drafts: facts
@@ -93,6 +94,7 @@ export function cleanDrafts(user: string, override: Record<string, string | null
       .map((f) => ({
         invoiceId: f.invoiceId, action: "remind", subject: `Payment reminder: invoice ${f.invoiceNumber}`,
         body: override[f.invoiceNumber] ?? `Hello, invoice ${f.invoiceNumber} for ${f.amountDue} was due ${f.dueDate}. Please make payment now.`,
+        offer: offers.includes(f.invoiceNumber) ? "payment_plan" : "none",
         escalationReason: null,
       })),
   };

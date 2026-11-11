@@ -2,14 +2,16 @@
  * Deterministic draft checks (code, not model). Run alongside the critic; a failure from
  * either counts.
  *   a: facts match the record exactly (+ format rules: no day counts, word limit, fixed closing)
- *   b: no discounts, waivers, extensions or status changes (pattern scan)
+ *   b: no concession outside the owner's policy: the only allowed offer is the code-rendered
+ *      payment-plan sentence, on an eligible invoice, with the policy's exact terms. Every other
+ *      discount, waiver, extension, parts/instalment wording or status change fails (pattern scan)
  *   c: no other customer's data (pattern scan against every invoice the run knows about)
  *   d: each draft traces to exactly one overdue invoice in this run's set
  *   e: every draftable invoice in the set has a draft or an escalation
  */
 import type { Draft } from "./drafter";
 import {
-  CLOSING_LINE, GRACE_DAYS, NOTE_MAX_WORDS, SIGN_OFF, formatAmount, wordCount, type DraftPlan,
+  CLOSING_LINE, GRACE_DAYS, NOTE_MAX_WORDS, SIGN_OFF, formatAmount, offerLabel, offerSentence, sameOffer, wordCount, type DraftPlan,
 } from "./policy";
 
 export type CheckId = "a" | "b" | "c" | "d" | "e";
@@ -27,17 +29,33 @@ const DATE = new RegExp(`\\b(?:${MONTHS})\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\
 const EMAIL_DESCRIPTION = /\b(?:button|click|link|below|attached|this email|the email)\b/i;
 const THREAT = /\b(?:late fees?|penalt(?:y|ies)|interest charges?|collections?|legal action|lawyer|attorney|court|suspend(?:ed)?|terminat(?:e|ed|ion)|credit (?:report|score))\b/i;
 const CONCESSION = /\b(?:discount(?:ed|s)?|\d{1,3}\s?(?:%|percent)(?:\s+off)?|percent\s+off|waive[ds]?|waiver|forgiv(?:e|en|eness)|write[- ]?off|written off|extension|extend(?:ed|ing)?|payment plan|instal(?:l)?ments?|split (?:the |your )?payment|partial payment|refund(?:ed)?|credit(?:ed)?|reduc(?:e|ed|tion)|lower(?:ed)? (?:amount|price|balance)|no (?:rush|hurry)|take your time|whenever you (?:can|like|want)|no longer (?:owe|due)|grace period|when(?:ever)?\s+(?:it(?:'|’)?s\s+|it\s+is\s+)?convenient|at\s+your\s+(?:earliest\s+)?convenience|when(?:ever)?\s+(?:you\s+)?(?:can|are able)\b|when\s+you\s+(?:have|get)\s+(?:a\s+)?(?:moment|chance|minute)|if\s+you\s+have\s+a\s+(?:moment|chance|minute)|work\s+(?:something|this|it|things)\s+out|work\s+with\s+you|figure\s+(?:something|this|it)\s+out|(?:come\s+to|make|set\s+up)\s+(?:an?\s+)?(?:arrangement|agreement)|arrangement|flexib(?:le|ility)|if\s+(?:the\s+full\s+amount|paying|payment|it)\s+is\s+(?:difficult|hard|a\s+problem|tough|an?\s+issue)|(?:need|want)\s+(?:more|extra|additional)\s+time)\b/i;
+/** Offer wording the drafter may never write itself (the code-rendered sentence is removed before this runs). */
+const OFFER_LANGUAGE = new RegExp(`\\b(?:in|into)\\s+(?:up\\s+to\\s+)?(?:\\d+|two|three|four|five|six|seven|eight|nine|ten|twelve|several|a few|smaller|multiple)\\s+(?:parts?|payments|portions|pieces|chunks)\\b|\\bpay(?:ing|ment)?s?\\s+(?:it\\s+|this\\s+|the\\s+(?:invoice|balance)\\s+)?in\\s+parts\\b|\\b(?:smaller|monthly|weekly)\\s+(?:payments|amounts|parts)\\b|\\bpart\\s+of\\s+(?:the|your|this)\\s+(?:balance|amount|invoice)\\b|\\bat\\s+least\\s+[$€£¥]`, "i");
 const STATUS_CLAIM = /\b(?:has been|have been|is|was|been|now|marked|mark(?:ed)?|consider(?:ed)?)\s+(?:as\s+)?(?:fully\s+)?(?:paid|settled|cancel+ed|voided?|closed|resolved)\b|\bmark(?:ed|ing)?\b.{0,30}\b(?:paid|settled|closed)\b/i;
 
 /** Every pattern the checks use, for the rules version fingerprint. */
-export const CHECK_PATTERNS = { MONEY, EMAIL, DURATION, DATE, EMAIL_DESCRIPTION, THREAT, CONCESSION, STATUS_CLAIM };
+export const CHECK_PATTERNS = { MONEY, EMAIL, DURATION, DATE, EMAIL_DESCRIPTION, THREAT, CONCESSION, OFFER_LANGUAGE, STATUS_CLAIM };
 
 const norm = (s: string) => s.replace(/[\s,]/g, "").toLowerCase();
 
 export function checkDraft(draft: Draft, plan: Extract<DraftPlan, { action: "draft" }>, known: KnownInvoice[]): Issue[] {
   const issues: Issue[] = [];
   const add = (check: CheckId, problem: string) => issues.push({ check, problem, source: "code" });
-  const { note, subject } = draft;
+  const { subject } = draft;
+
+  // ---- (b) the offer, first: only the code-rendered sentence, on an eligible invoice, with the
+  // policy's exact terms. It is then removed so its amount and wording don't trip the scans
+  // below; any OTHER offer wording (a second copy, an edited copy, the drafter's own) still fails.
+  let note = draft.note;
+  if (draft.offer) {
+    const sentence = offerSentence(draft.offer);
+    if (!plan.offer) add("b", `offers to let the customer pay in parts, but the invoice is outside the owner's policy (${plan.offerWhy})`);
+    else if (!sameOffer(draft.offer, plan.offer)) add("b", `offer terms (${offerLabel(draft.offer)}) differ from the owner's policy (${offerLabel(plan.offer)})`);
+    if (note.includes(sentence)) note = note.replace(sentence, "").replace(/\n{3,}/g, "\n\n");
+    else add("b", "an offer is attached but the note doesn't contain the exact offer sentence");
+  } else if (draft.offerChoice === "payment_plan") {
+    add("b", `drafter chose a payment-plan offer, but the invoice is outside the owner's policy (${plan.offerWhy})`);
+  }
   const text = `${subject}\n${note}`;
   const f = plan.facts;
   const others = known.filter((k) => k.invoiceId !== plan.invoiceId);
@@ -77,6 +95,8 @@ export function checkDraft(draft: Draft, plan: Extract<DraftPlan, { action: "dra
   // ---- (b) concessions and status changes
   const conc = text.match(CONCESSION);
   if (conc) add("b", `concession language ("${conc[0]}")`);
+  const offerWords = text.match(OFFER_LANGUAGE);
+  if (offerWords) add("b", `offer wording not written by code ("${offerWords[0]}")`);
   const status = text.match(STATUS_CLAIM);
   if (status) add("b", `claims or requests a status change ("${status[0]}")`);
   for (const m of text.match(DATE) ?? []) {
@@ -126,7 +146,7 @@ export function decide(code: Issue[], critic: CriticVerdict, criticFailure: stri
 /** Kept for reference in prompts and the UI. */
 export const CHECK_LABELS: Record<CheckId, string> = {
   a: "amount, due date and invoice number match the record",
-  b: "no discounts, waivers, extensions or status changes",
+  b: "no concession outside the owner's policy (only the code-rendered pay-in-parts offer), no status changes",
   c: "no other customer's data",
   d: "traces to exactly one overdue invoice in this run",
   e: "no overdue invoice in this run left out",

@@ -7,7 +7,10 @@ import { classifySendError, executeApproval, previewExecution, setExecutorDepsFo
 import { sendManualReminder } from "../lib/executor/manual";
 import { inQuietHours } from "../lib/executor/limits";
 import { approveAndExecute, approveProposal, hashToken, liveApproval } from "../lib/queue/actions";
-import { RULES_VERSION } from "../lib/agent/rules-version";
+import { RULES_VERSION as CODE_RULES_VERSION, rulesVersionFor } from "../lib/agent/rules-version";
+import { OFFERS_OFF } from "../lib/agent/policy";
+/** The current rules version with no policy saved (offers off). */
+const RULES_VERSION = rulesVersionFor(OFFERS_OFF);
 import { assembleNote } from "../lib/agent/policy";
 import type { Store } from "../lib/db";
 import { isolate, loadReplay, reset } from "./helpers";
