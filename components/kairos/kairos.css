@@ -52,8 +52,10 @@
 .kairos-root .kp-welcome p { margin: 0 0 12px; color: var(--k-muted); font-size: .9rem; }
 .kairos-root .kp-briefing-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--k-muted); margin-bottom: .25rem; }
 .kairos-root .kp-briefing p:not(.kp-briefing-label) { white-space: pre-line; color: var(--k-text); }
-.kairos-root .kp-chips { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.kairos-root .kp-chip { border: 1px solid var(--k-border); color: var(--k-text); background: var(--k-subtle); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .85rem; cursor: pointer; text-align: left; }
+.kairos-root .kp-chips { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; max-width: 100%; }
+.kairos-root .kp-chip { border: 1px solid var(--k-border); color: var(--k-text); background: var(--k-subtle); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .85rem; cursor: pointer; text-align: left;
+  /* A chip is one unit: it never wraps inside its border; long text truncates (full text in title). */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .kairos-root .kp-chip:hover:not(:disabled) { border-color: var(--k-accent); }
 .kairos-root .kp-chip-primary { background: var(--k-accent); border-color: var(--k-accent); color: var(--k-on-accent); }
 .kairos-root .kp-chip:disabled, .kairos-root .kp-button:disabled { opacity: .5; cursor: default; }
@@ -81,8 +83,8 @@
 .kairos-root .kp-foot { margin: 0; padding: 0 14px 10px; font-size: .72rem; color: var(--k-muted); }
 
 /* ---- Insight cards ---- */
-.kairos-root .kp-insights { display: grid; gap: 8px; margin-top: 10px; }
-.kairos-root .kp-insight { border: 1px solid var(--k-border); border-radius: 10px; padding: 10px 12px; background: var(--k-surface); }
+.kairos-root .kp-insights { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 10px; }
+.kairos-root .kp-insight { min-width: 0; border: 1px solid var(--k-border); border-radius: 10px; padding: 10px 12px; background: var(--k-surface); }
 .kairos-root .kp-insight p { margin: 6px 0; font-size: .9rem; color: var(--k-text); }
 .kairos-root .kp-insight-head { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; }
 .kairos-root .kp-insight-money { color: var(--k-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -105,3 +107,5 @@
   .kairos-root.kairos-docked .kp-close { display: block; }
   .kairos-root.kairos-docked .kp-scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, .35); }
 }
+/* Children of the scrolling list never grow wider than the panel (long chips truncate instead). */
+.kairos-root .kp-list > * { min-width: 0; max-width: 100%; }

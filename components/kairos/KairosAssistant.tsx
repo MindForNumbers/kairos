@@ -203,8 +203,8 @@ export default function KairosAssistant({
               <p>{briefing.text}</p>
               <div className="kp-chips">
                 {briefing.chips.map((c) => c.href
-                  ? <button key={c.label} className="kp-chip" onClick={() => navigate(c.href!)}>{c.label}</button>
-                  : <button key={c.label} className="kp-chip" onClick={() => send(c.ask ?? c.label)} disabled={busy}>{c.label}</button>)}
+                  ? <button key={c.label} className="kp-chip" title={c.label} onClick={() => navigate(c.href!)}>{c.label}</button>
+                  : <button key={c.label} className="kp-chip" title={c.label} onClick={() => send(c.ask ?? c.label)} disabled={busy}>{c.label}</button>)}
               </div>
               <InsightCards cards={briefing.cards ?? []} onAsk={(q) => send(q)} apiBase={apiBase} disabled={busy} />
             </div>
@@ -214,7 +214,7 @@ export default function KairosAssistant({
             <div className="kp-welcome">
               <p>Hi, I&apos;m {title}. Ask me about your invoices: who owes you, what&apos;s overdue, or what happened to a reminder. I can draft reminders for you to approve.</p>
               <div className="kp-chips">
-                {chips.map((c) => <button key={c} className="kp-chip" onClick={() => send(c.replace(/ \(.*\)$/, ""))} disabled={busy}>{c}</button>)}
+                {chips.map((c) => <button key={c} className="kp-chip" title={c} onClick={() => send(c.replace(/ \(.*\)$/, ""))} disabled={busy}>{c}</button>)}
               </div>
             </div>
           )}

@@ -40,10 +40,18 @@ export function ForecastWidget({ context: d }: Params) {
   return (
     <Shell title={`Cash forecast, next ${f.horizonDays} days`} sub="Probability-weighted, from the Director">
       <div className="kr-big">{usd(f.expected, f.currency)}</div>
-      <div className="kr-row"><span>Expected</span><Bar value={f.expected} max={max} label="Expected inflow" /></div>
-      {f.target > 0 && (
-        <div className="kr-row"><span>Your target</span><Bar value={f.target} max={max} tone="muted" label="Cash target" /></div>
-      )}
+      <ul className="kr-list">
+        <li>
+          <div className="kr-line"><span>Expected</span><span className="kr-num">{usd(f.expected, f.currency)}</span></div>
+          <Bar value={f.expected} max={max} label="Expected inflow" />
+        </li>
+        {f.target > 0 && (
+          <li>
+            <div className="kr-line"><span>Your target</span><span className="kr-num">{usd(f.target, f.currency)}</span></div>
+            <Bar value={f.target} max={max} tone="muted" label="Cash target" />
+          </li>
+        )}
+      </ul>
       <p className={`kr-note ${short ? "kr-warn-text" : "kr-ok-text"}`}>
         {f.target <= 0 ? "No cash target set (Incentives)." : short ? `${usd(f.shortfall, f.currency)} short of your ${usd(f.target, f.currency)} target.` : `On track for your ${usd(f.target, f.currency)} target.`}
       </p>

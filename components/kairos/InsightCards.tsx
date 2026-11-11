@@ -58,7 +58,7 @@ export default function InsightCards({ cards, onAsk, apiBase = "", disabled }: {
             {st?.done ? <p className="kp-insight-done" role="status">{st.done}</p> : (
               <div className="kp-chips">
                 {c.action && <button className="kp-chip kp-chip-primary" onClick={() => act(c)} disabled={disabled || st?.busy}>{st?.busy ? "Working…" : c.action.label}</button>}
-                {c.ask && <button className="kp-chip" onClick={() => onAsk(c.ask!)} disabled={disabled}>{c.ask}</button>}
+                {c.ask && <button className="kp-chip" title={c.ask} onClick={() => onAsk(c.ask!)} disabled={disabled}>{c.ask}</button>}
               </div>
             )}
             {st?.error && <p className="kp-insight-error" role="alert">{st.error}</p>}

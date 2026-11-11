@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 
 const LINKS = [
   { href: "/", label: "Home", match: (p: string) => p === "/" },
@@ -14,6 +15,10 @@ const LINKS = [
 
 export default function NavLinks({ approvals }: { approvals: number }) {
   const path = usePathname();
+  // On phones the nav scrolls sideways; keep the current page's tab in view.
+  useEffect(() => {
+    document.querySelector(".nav .nav-link.active")?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [path]);
   return (
     <>
       {LINKS.map((l) => (

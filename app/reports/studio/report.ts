@@ -101,7 +101,8 @@ export const RESPONSIVE: AgResponsiveLayoutBreakpoint[] = [
         .map((c, i) => ({ c, i }))
         .sort((a, b) => a.c.layout.yTrack - b.c.layout.yTrack || a.c.layout.xTrack - b.c.layout.xTrack)
         .map(({ c, i }) => {
-          const ySpan = Math.max(c.minSize.ySpan, c.layout.ySpan);
+          // A little taller than on desktop: text wraps more at phone width.
+          const ySpan = Math.max(c.minSize.ySpan, c.layout.ySpan + 5);
           const out = { i, layout: { xTrack: 0, yTrack: y, xSpan: state.columns, ySpan } };
           y += ySpan;
           return out;

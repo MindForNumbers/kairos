@@ -13,11 +13,12 @@
 .kr-actions { display: flex; gap: 8px; }
 .kr-canvas { flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--bg); box-shadow: var(--shadow); }
 
-.kr-widget { height: 100%; padding: 6px 8px; box-sizing: border-box; display: flex; flex-direction: column; color: var(--text); font-size: .9rem; overflow: hidden; }
-.kr-title { font-weight: 600; font-size: 15px; }
+.kr-widget { height: 100%; padding: 6px 8px; box-sizing: border-box; display: flex; flex-direction: column; color: var(--text); font-family: var(--font); font-size: .9rem; line-height: 1.45; overflow: hidden; }
+.kr-title { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
 .kr-sub { color: var(--muted); font-size: .8rem; margin-top: 2px; }
 .kr-body { flex: 1; min-height: 0; overflow: auto; margin-top: 10px; }
-.kr-big { font-size: 1.8rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-bottom: 8px; }
+/* Same as the home tiles: font, weight, size and tabular numerals. */
+.kr-big { font-family: var(--font); font-size: 1.85rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; margin: 2px 0 12px; }
 .kr-row { display: grid; grid-template-columns: 90px 1fr; gap: 8px; align-items: center; margin: 6px 0; color: var(--muted); font-size: .85rem; }
 .kr-bar { height: 8px; border-radius: 999px; background: var(--border); overflow: hidden; }
 .kr-bar-fill { display: block; height: 100%; border-radius: 999px; }

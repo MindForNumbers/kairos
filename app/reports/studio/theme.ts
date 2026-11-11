@@ -8,7 +8,8 @@ import { studioTheme } from "ag-studio";
 const v = (name: string) => `var(--${name})`;
 const line = (color: string) => ({ width: 1, color: v(color) });
 // Kairos-blue-led categorical palette (accent first), then muted neutrals.
-const PALETTE = ["var(--accent)", "#7d88ee", "#b7bdf6", "#d97a1e", "#64748b", "#2b36a3", "#d3d7fb", "#f0a860", "#94a3b8", "#5a67e8"];
+// The three Kairos blues first (blue, sky, ink), then warm and neutral contrasts.
+const PALETTE = ["var(--accent)", "var(--sky)", "var(--ink)", "#d97a1e", "#64748b", "#7d88ee", "#d3d7fb", "#f0a860", "#94a3b8", "#5a67e8"];
 const palette = Object.fromEntries(PALETTE.flatMap((c, i) => [[`chartPaletteFills${i + 1}Color`, c], [`chartPaletteStrokes${i + 1}Color`, c]]));
 const FONT = "var(--font)";
 

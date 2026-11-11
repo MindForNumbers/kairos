@@ -4,9 +4,14 @@
  * AG Studio theme on /reports read these variables.
  */
 :root {
-  --bg: #f5f6fa; --surface: #ffffff; --surface-2: #f8f9fc; --text: #0f1424; --muted: #5f6b7d;
-  --border: #e5e8ef; --border-strong: #cfd5e1;
-  --accent: #4353e0; --accent-strong: #3442c4; --accent-soft: #eef0fd; --on-accent: #ffffff;
+  /* Foundation */
+  --bg: #f1f2f6; --surface: #ffffff; --surface-2: #f7f8fb; --text: #0b0b0f; --muted: #5b6070;
+  --border: #e3e5ec; --border-strong: #cdd1dc;
+  /* Three Kairos blues: ink (active/emphasis), blue (actions, links, main series), sky (highlights, badges, secondary series) */
+  --ink: #1e2a78; --accent: #4353e0; --sky: #a5b4fc;
+  --accent-strong: #3442c4; --on-accent: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  --sky-soft: color-mix(in srgb, var(--sky) 28%, var(--surface));
   --danger: #c0352b; --ok: #0e7a4f; --warn: #b4580b;
   --radius: 16px; --radius-sm: 10px;
   --shadow: 0 1px 2px rgba(15, 20, 36, .04), 0 2px 8px rgba(15, 20, 36, .05);
@@ -17,9 +22,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1016; --surface: #161922; --surface-2: #1b1f2a; --text: #e9ecf3; --muted: #9aa3b5;
-    --border: #262b38; --border-strong: #353b4b;
-    --accent: #8c97ff; --accent-strong: #a6aeff; --accent-soft: #1d2142; --on-accent: #0e1016;
+    --bg: #0b0b0f; --surface: #15161d; --surface-2: #1b1d26; --text: #eef0f6; --muted: #9ba1b3;
+    --border: #262935; --border-strong: #353948;
+    /* Same family, lifted for dark surfaces: ink becomes the light emphasis tone. */
+    --ink: #c9d1ff; --accent: #8090f5; --sky: #a5b4fc;
+    --accent-strong: #9aa7ff; --on-accent: #0b0b0f;
+    --accent-soft: color-mix(in srgb, var(--accent) 16%, var(--surface));
+    --sky-soft: color-mix(in srgb, var(--sky) 14%, var(--surface));
     --danger: #ff8a7a; --ok: #5fd39c; --warn: #f2b266;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3); --shadow-hover: 0 4px 16px rgba(0, 0, 0, .35);
     color-scheme: dark;
@@ -219,15 +228,15 @@ a { color: var(--accent); text-underline-offset: 3px; }
 
 /* Top bar: white, quiet, with an underlined active nav item. */
 .topbar { padding: 0 24px; min-height: 64px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
-.brand-mark { background: var(--accent); color: var(--on-accent); border-radius: 10px; width: 34px; height: 34px; }
+.brand-mark { background: var(--ink); color: var(--surface); border-radius: 10px; width: 34px; height: 34px; }
 .brand-name { letter-spacing: -0.01em; }
 .connection { background: var(--surface-2); }
 .nav { gap: 2px; align-self: stretch; }
 .nav .nav-link { align-self: stretch; padding: 0 12px; border-radius: 0; color: var(--muted); font-weight: 500; box-shadow: inset 0 -2px 0 transparent; transition: color .15s, box-shadow .15s; }
 .nav .nav-link:hover { background: none; color: var(--text); }
-.nav .nav-link.active { background: none; color: var(--text); font-weight: 650; box-shadow: inset 0 -2px 0 var(--accent); }
+.nav .nav-link.active { background: none; color: var(--ink); font-weight: 650; box-shadow: inset 0 -2px 0 var(--ink); }
 .nav .button { align-self: center; }
-.nav-badge { background: var(--accent); color: var(--on-accent); }
+.nav-badge { background: var(--sky-soft); color: var(--ink); }
 
 /* Buttons: primary = filled pill, secondary = outlined pill. */
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 18px; border-radius: 999px; border: 1px solid var(--border-strong); background: transparent; color: var(--text); font-weight: 600; font-size: .9rem; line-height: 1.2; transition: background .15s, border-color .15s, box-shadow .15s; }
@@ -262,7 +271,7 @@ tbody tr:hover td { background: var(--surface-2); }
 /* Status as soft badges; pills and tone tags in the same family. */
 .status { display: inline-block; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, currentColor 11%, transparent); font-size: .7rem; letter-spacing: .03em; }
 .pill { padding: 3px 10px; background: color-mix(in srgb, currentColor 8%, transparent); }
-.count { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.count { background: var(--sky-soft); color: var(--ink); font-weight: 700; }
 .meter { background: var(--surface-2); }
 
 /* Home: quick actions (Kairos's own actions; icons in rounded-square tiles). */
@@ -281,6 +290,16 @@ tbody tr:hover td { background: var(--surface-2); }
   .quick-actions { grid-template-columns: 1fr 1fr; gap: 10px; }
   .quick { padding: 14px; }
 }
+
+/* Pills, badges and tags are atomic: never wrap inside their border (they wrap as whole units). */
+.pill, .status, .late, .count, .nav-badge, .connection, .tone-friendly, .tone-firm, .tone-final_notice { display: inline-block; white-space: nowrap; vertical-align: middle; }
+.pill { line-height: 1.4; }
+.flags, .proposal-head .inv { flex-wrap: wrap; row-gap: 6px; }
+.status + .late { margin-left: 6px; }
+/* Emphasis numbers in the deep ink blue; all figures use tabular numerals. */
+.tile-accent .tile-value { color: var(--ink); }
+.tile-value, .amount, td.num, .kr-big, .kr-num, .kr-tile-n { font-variant-numeric: tabular-nums; }
+.quick-title { text-wrap: balance; }
 
 /* Long URLs wrap inside cards; the Director's reason column stays readable when its table scrolls. */
 .card a, .card p { overflow-wrap: anywhere; }

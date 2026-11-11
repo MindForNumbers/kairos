@@ -22,7 +22,7 @@ const ICONS = {
 };
 function quickActions(waiting: number) {
   return [
-    { href: "/invoices/new#from-photo", title: "Invoice from a photo", sub: "Snap a quote or job note; Kairos fills the form for you to check.", icon: <Icon d={ICONS.photo} /> },
+    { href: "/invoices/new#from-photo", title: "Invoice from photo", sub: "Snap a quote or job note; Kairos fills the form for you to check.", icon: <Icon d={ICONS.photo} /> },
     { href: "/invoices/new#from-photo", title: "Dictate an invoice", sub: "Say what you did and for whom; review before it's created.", icon: <Icon d={ICONS.voice} /> },
     { href: "/approvals#run-agent", title: "Run Kairos now", sub: "Draft reminders for overdue invoices. Nothing sends without you.", icon: <Icon d={ICONS.agent} /> },
     { href: "/approvals", title: "Review approvals", sub: waiting ? `${waiting} reminder${waiting === 1 ? "" : "s"} waiting for your OK.` : "Nothing waiting right now.", icon: <Icon d={ICONS.approve} /> },
