@@ -63,7 +63,39 @@ export const demoPrefix = () => process.env.KAIROS_SEED_PREFIX?.trim() || "TS";
 /** "2026-11-10" → "261110". */
 export const demoStamp = (today: string) => today.slice(2).replaceAll("-", "");
 
-export const demoNumber = (prefix: string, today: string, n: string) => `${prefix}-${demoStamp(today)}-${n}`;
+/** PayPal's invoice_number limit. */
+export const MAX_INVOICE_NUMBER = 25;
+
+/**
+ * "TS-261110-1043"; with a re-seed suffix, "TS-261110b-1043". The suffix is one lowercase letter:
+ * "" is the day's first set, "b", "c", … are fresh re-seeds of the same day.
+ */
+export function demoNumber(prefix: string, today: string, n: string, suffix = ""): string {
+  if (!/^[a-z]?$/.test(suffix)) throw new Error(`demo suffix must be one lowercase letter, got "${suffix}"`);
+  const num = `${prefix}-${demoStamp(today)}${suffix}-${n}`;
+  if (num.length > MAX_INVOICE_NUMBER) throw new Error(`${num} is longer than PayPal's ${MAX_INVOICE_NUMBER} characters; shorten KAIROS_SEED_PREFIX`);
+  return num;
+}
+
+/**
+ * The suffix of the newest demo set already created today ("" if only the plain set, null if none),
+ * from the account's invoice numbers.
+ */
+export function latestSuffixToday(numbers: string[], prefix: string, today: string): string | null {
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`^${esc}-${demoStamp(today)}([a-z]?)-\\d+$`);
+  const found = numbers.filter((n) => isDemoNumber(n, prefix)).map((n) => n.match(re)?.[1]).filter((s): s is string => s !== undefined);
+  if (!found.length) return null;
+  return found.sort().at(-1)!;
+}
+
+/** The suffix a fresh re-seed uses: the letter after today's newest ("" → "b"). */
+export function nextSuffix(latest: string | null): string {
+  if (latest === null) return "";
+  if (latest === "") return "b";
+  if (latest === "z") throw new Error("Too many fresh re-seeds today (z used); wait for tomorrow's reset");
+  return String.fromCharCode(latest.charCodeAt(0) + 1);
+}
 
 /**
  * Issue date: 30 days before the due date, except that an invoice due this month is issued
@@ -118,7 +150,7 @@ export function parseEmails(raw: string): string[] {
 type Log = (line: string) => void;
 
 /** Create, send (and for paid ones, record payment on) today's demo set. Skips numbers that already exist. */
-export async function seedDemo(opts: { emails: string[]; today?: string; prefix?: string; dryRun?: boolean; log?: Log }): Promise<{ created: string[]; existing: string[] }> {
+export async function seedDemo(opts: { emails: string[]; today?: string; prefix?: string; suffix?: string; dryRun?: boolean; log?: Log }): Promise<{ created: string[]; existing: string[] }> {
   assertSandbox();
   const today = opts.today ?? localDate();
   const prefix = opts.prefix ?? demoPrefix();
@@ -129,7 +161,7 @@ export async function seedDemo(opts: { emails: string[]; today?: string; prefix?
     const email = opts.emails[i];
     log(`${c.name.join(" ")} · ${c.business} · ${email}`);
     for (const s of c.invoices) {
-      const number = demoNumber(prefix, today, s.n);
+      const number = demoNumber(prefix, today, s.n, opts.suffix ?? "");
       const dueDate = addDays(today, -s.daysOverdue);
       const issued = issueDate(dueDate, today);
       const paidOn = s.paid ? paymentDate(s, dueDate, today, c.payDay) : null;
@@ -181,8 +213,9 @@ async function listAll(): Promise<Invoice[]> {
 }
 
 /**
- * True only for one of the 8 demo invoice numbers: "<prefix>-<YYMMDD>-<n>" or the older
- * unstamped "<prefix>-<n>", with n one of the seeded numbers. Matching the prefix alone is NOT
+ * True only for one of the seeded demo numbers: "<prefix>-<YYMMDD>-<n>", a same-day fresh
+ * re-seed "<prefix>-<YYMMDD><letter>-<n>", or the older unstamped "<prefix>-<n>", with n one of
+ * the seeded numbers (CUSTOMERS). Matching the prefix alone is NOT
  * enough: PayPal's next-invoice-number increments the latest number, so an invoice the owner
  * (or a judge) creates on New Invoice gets e.g. TS-1049 or TS-261110-1049. Those must never
  * be cancelled by the reset.
@@ -190,22 +223,23 @@ async function listAll(): Promise<Invoice[]> {
 export function isDemoNumber(num: string, prefix = demoPrefix()): boolean {
   const seeded = new Set(CUSTOMERS.flatMap((c) => c.invoices.map((s) => s.n)));
   const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const m = num.match(new RegExp(`^${esc}-(?:\\d{6}-)?(\\d+)$`));
+  const m = num.match(new RegExp(`^${esc}-(?:\\d{6}[a-z]?-)?(\\d+)$`));
   return !!m && seeded.has(m[1]);
 }
 
 /**
- * Cancel (or delete, if draft) every demo invoice (isDemoNumber) except today's set, and close
- * the open proposals of every older demo invoice that is now cancelled.
+ * Cancel (or delete, if draft) every demo invoice (isDemoNumber) except the set being kept
+ * (today's stamp + `suffix`), and close the open proposals of every demo invoice now cancelled.
+ * Paid ones can't be cancelled and stay as history.
  */
-export async function retireOldDemoSets(opts: { today?: string; prefix?: string; actor: string; dryRun?: boolean; log?: Log }) {
+export async function retireOldDemoSets(opts: { today?: string; prefix?: string; suffix?: string; actor: string; dryRun?: boolean; log?: Log; invoices?: Invoice[] }) {
   assertSandbox();
   const today = opts.today ?? localDate();
   const prefix = opts.prefix ?? demoPrefix();
-  const keep = `${prefix}-${demoStamp(today)}-`;
+  const keep = `${prefix}-${demoStamp(today)}${opts.suffix ?? ""}-`;
   const log = opts.log ?? (() => {});
   const counts = { cancelled: 0, deleted: 0, failed: 0, proposalsClosed: 0 };
-  for (const inv of await listAll()) {
+  for (const inv of opts.invoices ?? await listAll()) {
     const num = inv.detail.invoice_number ?? "";
     if (!isDemoNumber(num, prefix) || num.startsWith(keep)) continue;
     let status = inv.status;
@@ -255,13 +289,27 @@ export async function ensureDemoPolicy(actor: string, dryRun = false, log: Log =
   return true;
 }
 
-/** The nightly reset: seed today's set, then retire older sets. */
-export async function resetDemo(opts: { emails: string[]; actor: string; dryRun?: boolean; log?: Log }) {
+/**
+ * The reset: seed today's set, then retire every other demo set.
+ *
+ * Nightly (default): today's CURRENT set is the newest one already created today, so a run after
+ * a same-day fresh re-seed adopts that set (creates nothing, retires the rest) instead of
+ * resurrecting the plain stamp and cancelling the fresh one.
+ * fresh: seed a brand-new set for today under the next suffix (TS-261111b-…), from the current
+ * seed definitions, then cancel everything else, including today's earlier set.
+ */
+export async function resetDemo(opts: { emails: string[]; actor: string; fresh?: boolean; dryRun?: boolean; log?: Log }) {
   const today = localDate();
+  const prefix = demoPrefix();
+  const before = await listAll();
+  const latest = latestSuffixToday(before.map((i) => i.detail.invoice_number ?? ""), prefix, today);
+  const suffix = opts.fresh ? nextSuffix(latest) : (latest ?? "");
+  opts.log?.(`${opts.fresh ? "FRESH re-seed" : "Nightly reset"}: today's set is ${prefix}-${demoStamp(today)}${suffix}-* (newest existing today: ${latest === null ? "none" : `"${latest}"`})`);
   const policySaved = await ensureDemoPolicy(opts.actor, opts.dryRun, opts.log);
-  const seeded = await seedDemo({ emails: opts.emails, today, dryRun: opts.dryRun, log: opts.log });
-  const retired = await retireOldDemoSets({ today, actor: opts.actor, dryRun: opts.dryRun, log: opts.log });
-  const summary = { today, stamp: demoStamp(today), created: seeded.created.length, existing: seeded.existing.length, policySaved, ...retired };
+  const seeded = await seedDemo({ emails: opts.emails, today, prefix, suffix, dryRun: opts.dryRun, log: opts.log });
+  // Re-list after seeding so the retire pass sees everything (and never touches the set just made).
+  const retired = await retireOldDemoSets({ today, prefix, suffix, actor: opts.actor, dryRun: opts.dryRun, log: opts.log, invoices: opts.dryRun ? before : undefined });
+  const summary = { today, stamp: `${demoStamp(today)}${suffix}`, fresh: !!opts.fresh, created: seeded.created.length, existing: seeded.existing.length, policySaved, ...retired };
   if (!opts.dryRun) await getStore().audit({ actor: opts.actor, event: "demo.reset", entityType: null, entityId: null, data: summary });
   return summary;
 }

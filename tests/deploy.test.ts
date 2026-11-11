@@ -5,7 +5,7 @@ import type { Store } from "../lib/db";
 import { daysToPayment, handleInvoiceEvent, setWebhookInvoiceFetchForTesting } from "../lib/webhooks/invoice-events";
 import { closeProposalsForInvoice } from "../lib/queue/close";
 import { authorizeCron } from "../lib/cron";
-import { CUSTOMERS, demoNumber, demoStamp, isDemoNumber, issueDate, parseEmails, paymentDate } from "../lib/demo/reset";
+import { CUSTOMERS, demoNumber, demoStamp, isDemoNumber, issueDate, latestSuffixToday, nextSuffix, parseEmails, paymentDate } from "../lib/demo/reset";
 import { isolate, reset } from "./helpers";
 
 let store: Store;
@@ -106,9 +106,27 @@ test("demo numbers are date-stamped and fit PayPal's 25 characters; dates land i
   assert.throws(() => parseEmails("a@x.co,b@x.co,c@x.co"), /exactly 4/);
 });
 
-test("the reset only matches the 8 seeded demo numbers, never an owner's invoice that PayPal numbered after them", () => {
-  for (const n of ["TS-1043", "TS-261110-1048", "TS-261109-1041"]) assert.equal(isDemoNumber(n, "TS"), true, n);
-  for (const n of ["TS-1049", "TS-261110-1049", "TS-261110-1040", "TS-26111-1043", "XTS-1043", "TS-1043-A", "0003", "DEMO-05"]) {
+test("the reset only matches the seeded demo numbers, never an owner's invoice that PayPal numbered after them", () => {
+  for (const n of ["TS-1043", "TS-261110-1048", "TS-261109-1041", "TS-261111b-1043", "TS-261111c-1031"]) assert.equal(isDemoNumber(n, "TS"), true, n);
+  for (const n of ["TS-1049", "TS-261110-1049", "TS-261110-1040", "TS-26111-1043", "XTS-1043", "TS-1043-A", "0003", "DEMO-05",
+    "TS-261111bb-1043", "TS-261111B-1043", "TS-261111b-1049", "TS-261111-b-1043"]) {
     assert.equal(isDemoNumber(n, "TS"), false, n);
   }
+});
+
+test("fresh re-seed: next suffix after today's newest set; the nightly adopts today's newest; 25-char limit holds", () => {
+  const nums = ["TS-261110-1043", "TS-261111-1041", "TS-261111-1048", "TS-261111-1049", "TS-261111x-9999", "OTHER-261111z-1041"];
+  assert.equal(latestSuffixToday(nums, "TS", "2026-11-11"), "", "only the plain set today (owner numbers and non-demo numbers ignored)");
+  assert.equal(nextSuffix(""), "b");
+  assert.equal(latestSuffixToday([...nums, "TS-261111b-1043", "TS-261111c-1031"], "TS", "2026-11-11"), "c");
+  assert.equal(nextSuffix("c"), "d");
+  assert.equal(latestSuffixToday(["TS-261110b-1043"], "TS", "2026-11-11"), null, "nothing today yet");
+  assert.equal(nextSuffix(null), "", "first set of the day has no suffix");
+  assert.throws(() => nextSuffix("z"), /Too many/);
+  assert.equal(demoNumber("TS", "2026-11-11", "1043", "b"), "TS-261111b-1043");
+  for (const c of CUSTOMERS) for (const s of c.invoices) assert.ok(demoNumber("TS", "2026-12-31", s.n, "z").length <= 25);
+  assert.throws(() => demoNumber("TS", "2026-11-11", "1043", "bb"), /one lowercase letter/);
+  assert.throws(() => demoNumber("A-VERY-LONG-PREFIX", "2026-11-11", "1043", "b"), /longer than PayPal's 25/);
+  // Every number a fresh set creates is one the reset will recognise (and retire tomorrow).
+  for (const c of CUSTOMERS) for (const s of c.invoices) assert.ok(isDemoNumber(demoNumber("TS", "2026-11-11", s.n, "b"), "TS"));
 });

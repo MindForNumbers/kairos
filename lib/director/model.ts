@@ -94,7 +94,9 @@ export type Factor = { key: string; points: number; text: string };
 export type CustomerHistory = {
   customer: string;
   paidInvoices: number;
+  /** Average days late over paid invoices, weighted by invoice amount. */
   avgDaysLate: number | null;
+  /** Share of paid invoice amounts that were paid by the due date. */
   onTimeRatio: number | null;
   lifetimePaidCents: number;
   /** 0 = Sunday … 6 = Saturday; the weekday most of their payments land on. */
@@ -178,10 +180,13 @@ export function nextWeekday(from: string, weekday: number): string {
 export function customerHistory(customer: string, input: DirectorInput): CustomerHistory {
   const invs = input.invoices.filter((i) => i.customer === customer);
   const paid = invs.filter((i) => PAID.has(i.status) && i.dueDate && i.payments.length);
+  // Lateness and on-time ratio are weighted by invoice amount: a few small invoices paid early
+  // don't outweigh large ones paid late. (Equal-sized invoices give the plain average.)
   const lates = paid.map((i) => {
     const last = i.payments.map((p) => p.date).sort().at(-1)!;
-    return daysBetween(i.dueDate!, last);
+    return { days: daysBetween(i.dueDate!, last), w: Math.max(1, i.totalCents) };
   });
+  const totalW = lates.reduce((a, l) => a + l.w, 0);
   const allPayments = invs.flatMap((i) => i.payments);
   const counts = new Array(7).fill(0) as number[];
   for (const p of allPayments) counts[weekdayOf(p.date)]++;
@@ -195,8 +200,8 @@ export function customerHistory(customer: string, input: DirectorInput): Custome
   return {
     customer,
     paidInvoices: paid.length,
-    avgDaysLate: lates.length ? round1(lates.reduce((a, b) => a + Math.max(0, b), 0) / lates.length) : null,
-    onTimeRatio: lates.length ? round1(lates.filter((d) => d <= 0).length / lates.length * 100) / 100 : null,
+    avgDaysLate: lates.length ? round1(lates.reduce((a, l) => a + Math.max(0, l.days) * l.w, 0) / totalW) : null,
+    onTimeRatio: lates.length ? round1(lates.filter((l) => l.days <= 0).reduce((a, l) => a + l.w, 0) / totalW * 100) / 100 : null,
     lifetimePaidCents: allPayments.reduce((a, p) => a + p.cents, 0),
     // A habit needs at least two payments on the same weekday.
     paymentWeekday: maxCount >= 2 ? counts.indexOf(maxCount) : null,

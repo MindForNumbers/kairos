@@ -19,8 +19,11 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json({ error: "DEMO_NOT_CONFIGURED", message: (err as Error).message }, { status: 503 });
   }
+  // ?fresh=1: re-seed today's demo from scratch under a new suffix (TS-261111b-…) and cancel the
+  // earlier set. The scheduled nightly call passes no query and is unchanged.
+  const fresh = new URL(req.url).searchParams.get("fresh") === "1";
   try {
-    const summary = await withRunLock(() => resetDemo({ emails, actor: "system:cron" }));
+    const summary = await withRunLock(() => resetDemo({ emails, actor: fresh ? "system:cron:fresh" : "system:cron", fresh }));
     return NextResponse.json(summary, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     if (err instanceof RunBusyError) return NextResponse.json({ error: "RUN_IN_PROGRESS", message: err.message }, { status: 409 });

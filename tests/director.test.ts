@@ -154,9 +154,9 @@ test("the demo reset's seed makes the Director choose differently per customer (
       return { invoiceId: s.n, invoiceNumber: s.n, status: s.paid ? "PAID" : s.partial ? "PARTIALLY_PAID" : "SENT", customer: `c${ci}@x`, currency: "USD",
         totalCents: total, dueCents: total - paid, invoiceDate: issueDate(due, today), dueDate: due, payments, flagged: !!s.note?.includes("Ignore previous") };
     }));
-    // Worst case for the live sandbox on the first day: two paid-early $120 invoices left over from the
-    // previous seed still count in Maya's history.
-    for (const k of [1, 2]) {
+    // Worst case for the live sandbox: three paid-early $120 invoices left over from the previous seed
+    // (TS-1041, TS-261110-1041, TS-261111-1041) still count in Maya's history.
+    for (const k of [1, 2, 3]) {
       const due = addDays(today, -20 - k);
       invoices.push({ invoiceId: `legacy-${k}`, invoiceNumber: `legacy-${k}`, status: "PAID", customer: "c0@x", currency: "USD", totalCents: 12000, dueCents: 0,
         invoiceDate: addDays(due, -30), dueDate: due, payments: [{ date: addDays(due, -2), cents: 12000, method: "BANK_TRANSFER" }], flagged: false });
