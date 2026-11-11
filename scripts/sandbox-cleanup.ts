@@ -8,10 +8,8 @@
 //   npm run sandbox:cleanup -- --keep=SEED  # keep a different prefix
 import { paypalRequest } from "../lib/paypal/client";
 import { listInvoices, type Invoice } from "../lib/paypal/invoices";
-import { getStore, type ProposalStatus } from "../lib/db";
-
-const OPEN: ProposalStatus[] = ["pending_review", "passed", "approved"];
-const NEEDS_HUMAN: ProposalStatus[] = ["blocked", "escalated"];
+import { getStore } from "../lib/db";
+import { closeProposalsForInvoice } from "../lib/queue/close";
 
 // PayPal refuses to cancel PARTIALLY_PAID invoices (CANNOT_CANCEL_PAID_INVOICE), verified in sandbox.
 const CANCELLABLE = new Set(["SENT", "UNPAID", "SCHEDULED", "PAYMENT_PENDING"]);
@@ -65,23 +63,13 @@ async function main() {
       console.log(`  FAILED  ${tag}  ${(e as Error).name}: ${(e as Error).message}`);
     }
   }
-  const store = getStore();
   for (const inv of gone) {
     const num = inv.detail.invoice_number ?? inv.id;
-    for (const p of await store.listProposals({ invoiceId: inv.id, status: [...OPEN, ...NEEDS_HUMAN] })) {
-      if (NEEDS_HUMAN.includes(p.status) && p.resolution) continue;
-      if (!apply) { console.log(`  close   ${num.padEnd(14)} proposal ${p.id} (${p.status})`); continue; }
-      const ok = NEEDS_HUMAN.includes(p.status)
-        ? Boolean(await store.resolveProposal({ proposalId: p.id, action: "dismissed", note: "Sandbox cleanup: invoice cancelled", actor: "sandbox-cleanup" }))
-        : await store.updateProposalStatus(p.id, { status: "skipped", reason: "Sandbox cleanup: invoice cancelled" }, [p.status]);
-      if (ok) {
-        counts.proposalsClosed++;
-        await store.audit({ actor: "sandbox-cleanup", event: "proposal.closed", entityType: "proposal", entityId: p.id, data: { invoiceNumber: num, from: p.status } });
-      }
-      console.log(`  ${ok ? "closed " : "FAILED "} ${num.padEnd(14)} proposal ${p.id} (${p.status})`);
-    }
+    const closed = await closeProposalsForInvoice(inv.id, "Sandbox cleanup: invoice cancelled", "sandbox-cleanup", !apply);
+    if (apply) counts.proposalsClosed += closed.length;
+    for (const c of closed) console.log(`  ${apply ? "closed " : "close  "} ${num.padEnd(14)} proposal ${c.proposalId} (${c.from})`);
   }
-  await store.close();
+  await getStore().close();
   console.log(`\n${JSON.stringify(counts)}${apply ? "" : "  (dry run; pass --apply)"}`);
 }
 

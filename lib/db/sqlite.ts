@@ -178,6 +178,17 @@ const MIGRATIONS: string[] = [
   CREATE TRIGGER chat_messages_no_delete BEFORE DELETE ON chat_messages
   BEGIN SELECT RAISE(ABORT, 'chat_messages are append-only'); END;
   `,
+  `
+  -- PayPal delivers webhooks at least once; the event id is the dedupe key.
+  CREATE TABLE webhook_events (
+    id          TEXT PRIMARY KEY,
+    event_type  TEXT NOT NULL,
+    resource_id TEXT,
+    received_at TEXT NOT NULL,
+    data        TEXT
+  );
+  CREATE INDEX webhook_events_resource ON webhook_events(resource_id);
+  `,
 ];
 
 /** Proposal columns plus its resolution (if any). */
@@ -456,6 +467,15 @@ export function openSqliteStore(path: string): Store {
       return (db.prepare("SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id").all(sid) as Row[]).map((r) => ({
         id: r.id as number, at: r.at as string, role: r.role as "user" | "assistant", kind: r.kind as ChatMessage["kind"], content: unjson(r.content as string),
       }));
+    },
+
+    async hasWebhookEvent(eventId) {
+      return !!db.prepare("SELECT 1 FROM webhook_events WHERE id = ?").get(eventId);
+    },
+
+    async recordWebhookEvent(e) {
+      return db.prepare("INSERT OR IGNORE INTO webhook_events (id, event_type, resource_id, received_at, data) VALUES (?, ?, ?, ?, ?)")
+        .run(e.id, e.eventType, e.resourceId, now(), json(e.data)).changes === 1;
     },
 
     async audit(e) {

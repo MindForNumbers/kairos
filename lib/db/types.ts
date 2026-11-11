@@ -169,6 +169,11 @@ export interface Store {
   appendChatMessage(m: { sessionId: string; role: "user" | "assistant"; kind: ChatMessageKind; content: unknown }): Promise<number>;
   listChatMessages(sessionId: string): Promise<ChatMessage[]>;
 
+  // Webhooks (PayPal delivers at least once)
+  hasWebhookEvent(eventId: string): Promise<boolean>;
+  /** False when the event id was already recorded. */
+  recordWebhookEvent(e: { id: string; eventType: string; resourceId: string | null; data?: unknown }): Promise<boolean>;
+
   // audit log
   audit(event: Omit<AuditEvent, "id" | "at">): Promise<void>;
   listAudit(filter?: { entityType?: string; entityId?: string; limit?: number }): Promise<AuditEvent[]>;

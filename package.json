@@ -17,7 +17,8 @@
     "agent:run": "node --env-file=.env --conditions=react-server --import tsx scripts/agent-run.ts",
     "agent:replay": "node --env-file=.env --conditions=react-server --import tsx scripts/agent-replay.ts",
     "executor:preview": "node --env-file=.env --conditions=react-server --import tsx scripts/executor-preview.ts",
-    "chat": "node --env-file=.env --conditions=react-server --import tsx scripts/chat.ts"
+    "chat": "node --env-file=.env --conditions=react-server --import tsx scripts/chat.ts",
+    "demo:reset": "node --env-file-if-exists=.env --conditions=react-server --import tsx scripts/demo-reset.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

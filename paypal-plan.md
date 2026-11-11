@@ -105,10 +105,10 @@ Outside the family (abort reason, `ConfigurationError`, `TypeError`) → rethrow
 2. `lib/payments/` uses only `transactionSearch` (no `.orders` / `.payments` / `.vault` / `.subscriptions`), makes no `fetch(` calls, writes nothing to the store, and imports no `lib/paypal/`, queue or executor.
 
 ## Assumptions & Blockers
-- A1 (minor, above): `T00` = payment received. Verify live.
-- A2 (minor): `cartInfo.paypalInvoiceId` or `transactionInfo.invoiceId` identifies the Kairos invoice; match on either the INV2 id or the invoice number. Verify on TS-1043.
+- A1 (minor, above): `T00` = payment received. **Verified 2026-11-10:** the TS-1043 invoice payment came back as `T0006`, status `S`.
+- A2 (minor): `cartInfo.paypalInvoiceId` or `transactionInfo.invoiceId` identifies the Kairos invoice; match on either the INV2 id or the invoice number. **Verified 2026-11-10:** `cart_info.paypal_invoice_id = INV2-RJ3P-9XE5-SEJJ-DGFW` (the invoice ID) and `transaction_info.invoice_id = TS-1043` (the invoice number); the code uses the ID first. The invoice's own payment record has `method: PAYPAL` and the same transaction ID (`9JN173058B6204412`), so `get_report` doesn't double count it.
 - No blockers. The scope is granted (smoke 200).
-- **Status 2026-11-09 21:1x PST:** A1 and A2 are still unverified live. TS-1043 is still `SENT` with no payment, and Transaction Search returns 0 rows (data current to 19:29:59 PST). When the payment lands, check its `transaction_event_code` and which field carries the invoice reference. Until then, a payment outside the `T00` family isn't counted, and one whose reference doesn't match an invoice is listed without an invoice number. Both fail safe (under-reported, never misattributed).
+- **Status 2026-11-10:** A1 and A2 are verified against the live TS-1043 payment ($250.00, 2026-11-09 21:22 PST). The chat's "what came in this week?" lists it, linked to TS-1043.
 
 ## REQUIRED READING
 - Error boundary, family narrowing, rethrow outside the family → MUST load `typescript-error-handling` (loaded).

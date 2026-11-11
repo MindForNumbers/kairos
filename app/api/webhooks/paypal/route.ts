@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 import { paypalRequest } from "@/lib/paypal/client";
-
-type WebhookEvent = {
-  id: string;
-  event_type: string;
-  resource_type?: string;
-  resource?: { invoice?: { id: string; status: string }; id?: string; status?: string };
-};
+import { handleInvoiceEvent, type WebhookEvent } from "@/lib/webhooks/invoice-events";
 
 /**
  * Receives INVOICING.INVOICE.* events. Every event is verified with PayPal
- * before it is trusted; unverified payloads get a 400 response.
+ * before it is trusted; unverified payloads get a 400 response. Verified events go to
+ * lib/webhooks/invoice-events.ts (dedupe on event id; close proposals on PAID/CANCELLED/
+ * REFUNDED; record days-to-payment on PAID).
  *
  * Subscribe in the Developer Dashboard (app → Webhooks) to at least:
  *   INVOICING.INVOICE.PAID, INVOICING.INVOICE.CANCELLED,
@@ -63,19 +59,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "INVALID_SIGNATURE" }, { status: 400 });
   }
 
-  // PayPal delivers at-least-once: dedupe on event.id once there is persistence.
-  const invoice = event.resource?.invoice ?? event.resource;
-  switch (event.event_type) {
-    case "INVOICING.INVOICE.PAID":
-    case "INVOICING.INVOICE.CANCELLED":
-    case "INVOICING.INVOICE.REFUNDED":
-    case "INVOICING.INVOICE.UPDATED":
-      // TODO: persist status change / notify. No database yet — PayPal remains the source of truth.
-      console.info(`[webhook] ${event.event_type} invoice=${invoice?.id} status=${invoice?.status}`);
-      break;
-    default:
-      console.info(`[webhook] ignored ${event.event_type}`);
+  try {
+    const r = await handleInvoiceEvent(event);
+    return NextResponse.json({ received: true, ...r });
+  } catch (err) {
+    // Non-2xx makes PayPal redeliver; handling is idempotent and the event isn't recorded yet.
+    console.error("[webhook] handling failed", event.id, err);
+    return NextResponse.json({ error: "HANDLER_FAILED" }, { status: 500 });
   }
-
-  return NextResponse.json({ received: true });
 }

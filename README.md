@@ -17,7 +17,16 @@ npm test               # unit tests, models stubbed
 npm run check:boundaries
 ```
 
-Demo data: `KAIROS_SEED_EMAILS=a@…,b@…,c@…,d@… npm run seed` (four sandbox personal accounts), then `npm run sandbox:cleanup -- --keep=TS --apply` and `npm run agent:run`.
+## Demo data resets daily
+
+The hosted demo runs on a PayPal **sandbox**, and its data resets every day:
+
+- **14:30 UTC: demo reset** (`POST /api/cron/demo-reset`). Seeds a fresh set of 8 invoices for 4 customers, numbered `TS-<YYMMDD>-1041` … `-1048`: 2 paid, 3 slightly overdue, one over $2,000, one over 60 days, and one whose note tries a prompt injection. Some are issued and paid within the current month so "this month" reports have data. Then it cancels the previous day's open demo invoices and closes their proposals. Only those 8 numbers are ever touched: an invoice you create on New Invoice (PayPal numbers it after the demo ones, e.g. `TS-<YYMMDD>-1049`) is left alone. Paid demo invoices can't be cancelled and stay as history.
+- **15:00 UTC: agent run** (`POST /api/cron/agent-run`). Drafts reminders for the new set. Nothing is sent until someone approves it on Approvals.
+
+Both endpoints require `Authorization: Bearer $KAIROS_CRON_SECRET` (32+ characters) and are called by Render Cron Jobs. To run the reset by hand: `npm run demo:reset -- --dry-run`, then `npm run demo:reset` (needs `KAIROS_SEED_EMAILS`: four distinct sandbox personal-account emails).
+
+The PayPal webhook (`/api/webhooks/paypal`, signature-verified) skips repeat deliveries of the same event id. On PAID, CANCELLED or REFUNDED it closes that invoice's open proposals, and on PAID it records days-to-payment in the audit log.
 
 ## Invoice from a photo
 

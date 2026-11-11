@@ -16,7 +16,7 @@ export const MIN_GAP_MS = 60_000;
 /** A "running" run older than this is treated as crashed, not as in progress. */
 const STALE_RUN_MS = 10 * 60_000;
 
-export async function triggerRun(actor: string, runner: () => Promise<RunReport> = () => runAgent()): Promise<RunReport> {
+export async function triggerRun(actor: string, runner: () => Promise<RunReport> = () => runAgent(), source = "approvals_page"): Promise<RunReport> {
   try {
     return await withRunLock(async () => {
       const store = getStore();
@@ -28,7 +28,7 @@ export async function triggerRun(actor: string, runner: () => Promise<RunReport>
           throw new QueueError(429, "TOO_SOON", `The last run started ${Math.round(age / 1000)}s ago; wait ${Math.ceil((MIN_GAP_MS - age) / 1000)}s`);
         }
       }
-      await store.audit({ actor, event: "run.requested", entityType: null, entityId: null, data: { source: "approvals_page" } });
+      await store.audit({ actor, event: "run.requested", entityType: null, entityId: null, data: { source } });
       return runner();
     });
   } catch (err) {
