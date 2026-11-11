@@ -120,6 +120,11 @@ const rules = [
     forbid: /\.(createHold|clearHold)\(/,
   },
   {
+    name: "components/kairos/ is embeddable: plain React + fetch, no Next.js and no server code (it reaches Kairos only through its HTTP API)",
+    applies: (f) => f.startsWith("components/kairos/"),
+    forbid: /from\s+["'](next(\/[^"']*)?|@\/lib\/[^"']*|@\/app\/[^"']*|server-only)["']|dangerouslySetInnerHTML/,
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,

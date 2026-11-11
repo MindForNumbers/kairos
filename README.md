@@ -7,6 +7,9 @@ Invoicing and collections for a small business on PayPal (sandbox). Built on the
 - **Kairos chat**: a read-only assistant docked on every page. It answers questions about invoices, customers, the queue and sent reminders, and can request drafts, which still go to Approvals. On an empty conversation it opens with a briefing. Its numbers are computed in code from the same data as the home tiles; Haiku only phrases a template, cached per shape and regenerated at most once an hour. `get_report` gives aging, collected vs outstanding, top customers owing and reminder activity for a period.
 - **Invoice from a photo or voice note**: on **New invoice**, snap a job note or dictate one (Chrome). Kairos fills in the form, and the owner checks it and clicks Create.
 - **Pay in parts**: the owner sets a payment-plan policy on **Incentives** (`/settings/incentives`), and reminders for eligible invoices can offer to let the customer pay in parts through PayPal.
+- **The Kairos Director**: deterministic collections pacing (`/director`). Per customer, a pressure score, the next move, a suggested day and the reason, plus a 14-day cash forecast.
+- **Proactive insights**: the briefing shows up to three code-computed cards (stuck invoice → offer a payment plan, possible payment outside the invoice → hold the reminder, cash forecast, slow payers) with one-click actions that never send anything.
+- **Embeddable**: the assistant is a self-contained React component another business dashboard can mount (`components/kairos/`, demo at `/embed-demo`).
 
 ## Run it
 
@@ -115,6 +118,59 @@ Getting paid sometimes means letting a customer pay part now. On **Incentives** 
 
 **Next step: early-payment discounts** (e.g. "2% off if paid within 5 days"). They aren't built. They would need their own policy limits, a time-boxed amount change on the invoice, and a way to restore the full amount when the window closes.
 
+## Integrating Kairos into a business dashboard
+
+The assistant panel (the briefing, insight cards, chat and draft requests) is a self-contained React component: `components/kairos/KairosAssistant.tsx`, with `InsightCards.tsx` and `kairos.css` beside it.
+- **No framework dependencies:** it uses only React and `fetch`, so it can be mounted by a host business dashboard (a Next.js app, Vite, or any React page).
+- **Scoped, neutral styles:** everything sits under `.kairos-root` with its own `--k-*` variables. It's neutral grey by default, dark mode follows the system, and nothing leaks into or out of the host. The Kairos app mounts the same component through a thin wrapper (`app/KairosPanel.tsx`) that maps it onto the app's colors.
+- **Demo:** `/embed-demo` shows it inline inside a plain example host page.
+
+```tsx
+import KairosAssistant from "./kairos/KairosAssistant"; // copy components/kairos/ into the host
+
+<KairosAssistant
+  layout="inline"                    // or "docked": a sidebar, a slide-up drawer on phones
+  apiBase=""                         // where the Kairos API is served (same origin; see Auth)
+  context={{ invoiceId: "INV2-…", invoiceNumber: "TS-1046" }} // optional: what the user is looking at
+  onNavigate={(path) => router.push(path)} // "/approvals", "/director"; default: full page load
+  onDraftsCreated={() => refreshCounts()}  // optional: the host refreshes its own badges
+  theme="light"                      // optional: force a theme
+/>
+```
+
+To match the host's look, set `--kairos-accent` (or any `--k-*` variable) on a wrapper. For example, `.my-host { --kairos-accent: #334155; }`.
+
+**Auth:**
+- The component calls the Kairos API with the browser's Kairos session cookie: `HttpOnly`, `SameSite=Strict`, set by signing in at `/login`. Every POST must also come from the same origin (CSRF check).
+- So Kairos must be served from the **same origin** as the host page, for example behind the host's reverse proxy, with `/api/*`, `/login`, `/approvals` and `/director` routed to Kairos.
+- Cross-origin embedding (a host on another domain calling Kairos directly) is **not supported, by design**.
+- *Next step:* scoped API tokens, so a host server can call Kairos on the owner's behalf without sharing the session.
+
+**API endpoints the component calls** (all session-authenticated):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/chat/briefing` | the opening briefing: summary text (code numbers), chips, up to 3 insight cards |
+| `GET /api/chat?sessionId=…` | restore a conversation (the server owns the transcript) |
+| `POST /api/chat/stream` `{message, sessionId, invoiceId}` | one chat turn, as server-sent events: `text`, `tool_start`, `tool_done`, `proposals`, `done`, `error` |
+| `POST /api/insights/actions` `{type: "offer_plan" \| "hold", invoiceId}` | the one-click insight actions (draft for approval / Kairos-side hold) |
+
+**Links:** the component links to two Kairos pages, the owner's decision points: `/approvals` (approve or reject drafts, the only way anything is sent) and `/director`. A host can open them in a new tab or route to them.
+
+**Data Kairos needs:**
+- A PayPal REST app with Invoicing (sandbox or live). Transaction Search is optional: it feeds "received", relief and the outside-payment insight.
+- An Anthropic API key.
+- A persistent disk for SQLite (the proposals, approvals, send ledger, holds, policy versions and audit log).
+- Optionally the PayPal webhook.
+
+The host passes no invoice data. Kairos reads it from PayPal itself, and the host only says which invoice the user is looking at.
+
+**Unchanged inside a host:**
+- The chat stays read-only, apart from requesting drafts.
+- Customer text is treated as data.
+- Spend caps apply.
+- Nothing is sent until the owner approves it on Approvals.
+
 ## PayPal API code and the APIMatic plugin
 
 New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@context-plugins` v0.4.1, the `paypal:typescript-*` skills) and its generated SDK, the `paypal` package (PayPal Server SDK v2.29.0, pinned to commit `5d0df8a` over public https: `git+https://github.com/context-plugins/paypal-typescript-sdk.git#5d0df8a8817e5fdf2e2cd48e68f790ea4730aab2`). `npm ci` clones it without credentials and builds it with the SDK's `prepare` script, because the repo has no prebuilt `dist/`. npm rewrites a GitHub `resolved` URL to `git+ssh` on `npm install`, so after any `npm install`, check that `package-lock.json` still says `git+https`. That SDK covers Orders, Payments, Subscriptions, Transaction Search and Vault, **not Invoicing**.
@@ -131,3 +187,22 @@ New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@c
 - the briefing's "received through PayPal this week" figure, cached for 10 minutes.
 
 **Not built with the plugin:** every Invoicing API v2 call (`lib/paypal/`, hand-written, predating the plugin). That covers the invoices UI, the agent's reads, the executor's reminder send, the seed and cleanup scripts, and photo/voice intake's Create. The business-name field adds `billing_info.business_name` to that existing create request. The executor's "turn on partial payments" update for pay-in-parts offers is also hand-written Invoicing code (`PUT /v2/invoicing/invoices/{id}`), because the plugin's SDK has no Invoicing operations to build it from.
+
+## Built vs. next
+
+**Built:**
+- invoicing on PayPal;
+- the approval-gated collections agent (drafter, independent critic and code checks);
+- the read-only chat with briefing, reports and insight cards;
+- photo/voice intake;
+- owner-defined pay-in-parts offers;
+- the Kairos Director;
+- proactive insights with holds;
+- the embeddable assistant;
+- the nightly demo reset, cron runs and webhook handling.
+
+**Next:**
+- **Early-payment discounts:** see Pay in parts.
+- **Scoped API tokens for host dashboards:** see Integrating.
+- **Director tuning from outcomes:** the weights are fixed parameters today. They are versioned, so they could be tuned against which reminders actually got paid.
+- **Multi-currency cash forecasts:** the forecast sums one currency.

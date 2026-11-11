@@ -138,56 +138,11 @@ code { font-size: .85em; background: var(--bg); border: 1px solid var(--border);
 main:has(.with-assistant) { max-width: 1400px; }
 .with-assistant { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 24px; align-items: start; }
 .wa-main { min-width: 0; }
-.kairos-panel {
-  position: sticky; top: 16px; height: calc(100vh - 104px); min-height: 480px;
-  display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
-}
-.kp-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-.kp-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--surface); display: grid; place-items: center; font-weight: 800; font-size: .85rem; }
-.kp-title { display: flex; flex-direction: column; line-height: 1.15; margin-right: auto; min-width: 0; }
-.kp-title span { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kp-link { background: none; border: 0; color: var(--accent); font: inherit; font-size: .8rem; cursor: pointer; padding: 4px; }
-.kp-close { display: none; background: none; border: 0; font-size: 1.4rem; line-height: 1; color: var(--muted); cursor: pointer; padding: 2px 6px; }
-.kp-list { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
-.kp-welcome p { margin: 0 0 12px; color: var(--muted); font-size: .9rem; line-height: 1.45; }
-.kp-chips { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-.kp-chip { border: 1px solid var(--accent); color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .85rem; cursor: pointer; text-align: left; }
-.kp-chip:hover:not(:disabled) { background: var(--accent); color: var(--surface); }
-.kp-msg { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9rem; line-height: 1.45; max-width: 100%; }
-.kp-user { align-self: flex-end; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); padding: 8px 12px; border-radius: 14px 14px 4px 14px; max-width: 85%; }
-.kp-bot { align-self: flex-start; padding: 2px 2px; }
-.kp-bot.streaming::after { content: "▍"; color: var(--accent); animation: kp-blink 1s steps(2) infinite; }
-@keyframes kp-blink { 50% { opacity: 0; } }
-.kp-error { color: var(--danger); font-size: .85rem; }
-.kp-activity { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--muted); }
-.kp-activity .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
-.kp-activity.running .dot { animation: kp-pulse 1s ease-in-out infinite; }
-.kp-activity.failed .dot { background: var(--danger); }
-@keyframes kp-pulse { 50% { opacity: .25; } }
-.kp-card { display: flex; align-items: center; gap: 12px; border: 1px solid var(--accent); border-radius: 12px; padding: 12px; background: var(--accent-soft); }
-.kp-card-main { display: flex; flex-direction: column; gap: 2px; margin-right: auto; font-size: .82rem; color: var(--muted); }
-.kp-card-main strong { color: var(--text); font-size: .9rem; }
-.kp-card-note { font-size: .75rem; }
-.kp-input { display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px; border-top: 1px solid var(--border); }
-.kp-input textarea { resize: none; font-size: .9rem; }
-.kp-foot { margin: 0; padding: 0 14px 10px; font-size: .72rem; color: var(--muted); }
-.kairos-fab { display: none; }
-.kp-scrim { display: none; }
-
-@media (max-width: 960px) {
-  .with-assistant { grid-template-columns: 1fr; }
-  .kairos-fab {
-    display: block; position: fixed; right: 16px; bottom: 16px; z-index: 30;
-    background: var(--accent); color: var(--surface); border: 0; border-radius: 999px; padding: 12px 18px; font: inherit; font-weight: 600;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, .18); cursor: pointer;
-  }
-  .kairos-panel {
-    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 40; height: 85vh; min-height: 0;
-    border-radius: 16px 16px 0 0; transform: translateY(105%); transition: transform .25s ease;
-  }
-  .kairos-panel.open { transform: translateY(0); }
-  .kp-close { display: block; }
-  .kp-scrim { display: block; position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, .35); }
+@media (max-width: 960px) { .with-assistant { grid-template-columns: 1fr; } }
+/* The embeddable assistant (components/kairos/) is neutral by default; in this app it wears the app's colors. */
+html .kairos-root.kairos-app-theme {
+  --k-surface: var(--surface); --k-subtle: var(--bg); --k-text: var(--text); --k-muted: var(--muted); --k-border: var(--border);
+  --k-accent: var(--accent); --k-on-accent: var(--surface); --k-accent-soft: var(--accent-soft); --k-danger: var(--danger); --k-ok: var(--ok);
 }
 
 /* ---- Invoice from photo / voice ---- */
@@ -200,11 +155,6 @@ main:has(.with-assistant) { max-width: 1400px; }
 .finding-field { font-weight: 600; }
 input.flag-error, textarea.flag-error { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
 input.flag-warn, textarea.flag-warn { border-color: var(--warn); }
-
-/* ---- Kairos briefing ---- */
-.kp-briefing-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 0.25rem; }
-.kp-briefing p:not(.kp-briefing-label) { white-space: pre-line; }
-a.kp-chip { text-decoration: none; display: inline-block; }
 
 /* Pay-in-parts offer on approval cards */
 .offer { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; line-height: 1.45; }
@@ -223,12 +173,15 @@ a.kp-chip { text-decoration: none; display: inline-block; }
 .director-row { margin-bottom: 12px; }
 .director-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
 
-/* Insight cards in the briefing */
-.kp-insights { display: grid; gap: 8px; margin-top: 10px; }
-.kp-insight { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
-.kp-insight p { margin: 6px 0; font-size: .9rem; }
-.kp-insight-head { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; }
-.kp-insight-money { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kp-chip-primary { background: var(--accent); color: #fff; }
-.kp-insight-done { color: var(--ok); }
-.kp-insight-error { color: var(--danger); }
+/* Example host dashboard (/embed-demo): deliberately plain, neutral styling, not the Kairos look. */
+.host-demo { border: 1px solid #d4d4d8; border-radius: 10px; overflow: hidden; background: #fafafa; color: #27272a; font-family: Georgia, "Times New Roman", serif; }
+.host-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #e4e4e7; border-bottom: 1px solid #d4d4d8; }
+.host-logo { width: 18px; height: 18px; border-radius: 4px; background: #71717a; }
+.host-muted { color: #71717a; font-size: .85rem; }
+.host-grid { display: grid; grid-template-columns: 1fr 1fr 380px; gap: 14px; padding: 14px; align-items: start; }
+.host-widget { background: #fff; border: 1px solid #e4e4e7; border-radius: 6px; padding: 12px 14px; min-height: 140px; }
+.host-widget h3 { margin: 0 0 6px; font-size: 1rem; }
+.host-assistant { height: 620px; }
+.host-demo-kairos { --kairos-accent: #52525b; height: 100%; }
+@media (max-width: 960px) { .host-grid { grid-template-columns: 1fr; } .host-assistant { height: 560px; } }
+@media (prefers-color-scheme: dark) { .host-demo { background: #18181b; color: #e4e4e7; border-color: #3f3f46; } .host-bar { background: #27272a; border-color: #3f3f46; } .host-widget { background: #1f1f23; border-color: #3f3f46; } .host-demo-kairos { --kairos-accent: #d4d4d8; } }
