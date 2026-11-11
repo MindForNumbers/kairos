@@ -49,6 +49,21 @@ export type DraftContent = {
   offer?: DraftOffer | null;
 };
 
+/**
+ * A Kairos-side hold on an invoice: blocks drafting (and approving) reminders until the owner
+ * clears it. Nothing is written to PayPal. Holds and clears are append-only rows.
+ */
+export type Hold = {
+  id: string;
+  invoiceId: string;
+  reason: string;
+  /** Where it came from, e.g. "insight:possible_outside_payment". */
+  source: string;
+  actor: string;
+  createdAt: string;
+  cleared: { actor: string; at: string } | null;
+};
+
 /** One saved version of the owner's incentive policy. Append-only; the latest is current. */
 export type PolicyVersion = { version: number; createdAt: string; actor: string; policy: unknown };
 
@@ -181,6 +196,14 @@ export interface Store {
   latestIncentivePolicy(): Promise<PolicyVersion | null>;
   listIncentivePolicies(limit?: number): Promise<PolicyVersion[]>;
   appendIncentivePolicy(input: { policy: unknown; actor: string }): Promise<PolicyVersion>;
+
+  // Holds (Kairos-side; never written to PayPal)
+  /** Throws if the invoice already has an active hold. */
+  createHold(input: { invoiceId: string; reason: string; source: string; actor: string }): Promise<Hold>;
+  /** Throws if the hold doesn't exist or is already cleared. */
+  clearHold(input: { holdId: string; actor: string }): Promise<Hold>;
+  activeHoldFor(invoiceId: string): Promise<Hold | null>;
+  listHolds(filter?: { active?: boolean; limit?: number }): Promise<Hold[]>;
 
   // Webhooks (PayPal delivers at least once)
   hasWebhookEvent(eventId: string): Promise<boolean>;

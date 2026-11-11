@@ -6,12 +6,14 @@ import { getStore, type Proposal } from "@/lib/db";
 import { fetchInvoice, listAllInvoices, type Invoice } from "@/lib/agent/paypal-read";
 import { CHASEABLE, GRACE_DAYS_EXPORT, REMINDER_COOLDOWN_DAYS, dueDateOf, holdingProposal, sweep } from "@/lib/agent/sweep";
 import { cleanUntrusted, flagUntrusted } from "@/lib/agent/untrusted";
-import { ESCALATE_AFTER_DAYS, currentReason } from "@/lib/agent/policy";
+import { ESCALATE_AFTER_DAYS, currentReason, offerLabel } from "@/lib/agent/policy";
 import { runAgent } from "@/lib/agent/pipeline";
 import { RunBusyError, withRunLock } from "@/lib/agent/run-guard";
 import { CostCapError } from "@/lib/agent/budget";
 import { loadDirectorPlan } from "@/lib/director/gather";
 import { MOVE_LABEL } from "@/lib/director/model";
+import { loadInsights } from "@/lib/insights/load";
+import type { Insight } from "@/lib/insights/compute";
 import { amountDue, createdAt, currencyOf, daysOverdue, isOpen, recipientEmail, stats, sumDue, toCents, fromCents } from "@/lib/invoice-stats";
 
 /**
@@ -77,7 +79,7 @@ function row(inv: Invoice, today: string) {
 // ---- Agent state for one invoice: what Kairos would do and what the user can do next ----------
 
 type AgentState = {
-  state: "not_open" | "not_due" | "grace_period" | "cooldown" | "awaiting_approval" | "needs_human" | "eligible_for_reminder";
+  state: "not_open" | "not_due" | "on_hold" | "grace_period" | "cooldown" | "awaiting_approval" | "needs_human" | "eligible_for_reminder";
   detail: string;
   lastReminder: { at: string; source: string } | null;
 };
@@ -90,6 +92,8 @@ async function agentState(inv: Invoice, today: string): Promise<{ state: AgentSt
   const due = dueDateOf(inv);
   const late = due ? daysBetween(due, today) : 0;
   if (!due || late <= 0) return { state: { state: "not_due", detail: due ? `due ${due}` : "no due date", lastReminder }, holdReason: null };
+  const ownerHold = await store.activeHoldFor(inv.id);
+  if (ownerHold) return { state: { state: "on_hold", detail: `on hold since ${ownerHold.createdAt.slice(0, 10)}: no reminders until the owner clears the hold on the Director page`, lastReminder }, holdReason: ownerHold.reason };
   const hold = await holdingProposal(inv.id);
   if (hold?.reason === "in_queue") return { state: { state: "awaiting_approval", detail: `a reminder draft is waiting on the Approvals page (${hold.proposal.status})`, lastReminder }, holdReason: null };
   if (hold?.reason === "needs_human") {
@@ -158,6 +162,9 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   { name: "preview_overdue", strict: true,
     description: "Read-only preview of what a Kairos run would draft now: which overdue invoices are in the next run, which are deferred, and which are skipped and why.",
     input_schema: obj({}) },
+  { name: "get_insights", strict: true,
+    description: "Proactive insights computed by code, ranked by money at stake: large stuck invoices that qualify for a payment-plan offer, possible payments made outside an invoice (a PayPal payment matching an open invoice's amount), the 14-day cash forecast with its confidence, and slow payers. Read-only. Use for 'any risks?', 'what's my cash looking like?', 'how does <customer> usually pay?' (then customer_history for detail). The owner can act on insights from the briefing cards; you can't.",
+    input_schema: obj({ kind: { type: ["string", "null"], enum: ["payment_plan_candidate", "possible_outside_payment", "cash_forecast", "slow_payer", null], description: "Only this kind, or null for all." } }) },
   { name: "get_director_plan", strict: true,
     description: "The Kairos Director's plan: for each customer with overdue invoices, a pressure score (0-100), the next move (wait, friendly, firm, offer payment plan, final notice, escalate), the suggested day and a one-line reason naming the top factors; plus the 14-day cash forecast. Deterministic code, read-only. Use for 'who should I focus on this week, and why?', 'why is Kairos waiting on X?'.",
     input_schema: obj({ limit: { type: "integer", description: "Customers to return, 1 to 50." } }) },
@@ -182,6 +189,26 @@ export async function runTool(name: string, input: Input, ctx: ToolContext): Pro
 }
 
 const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolResult>> = {
+  async get_insights(i, ctx) {
+    const { invoices } = await ctx.listAll();
+    const { insights, names } = await loadInsights({ invoices, today: ctx.today });
+    const m = (c: number, cur: string) => money(cur, (c / 100).toFixed(2));
+    const list = insights.filter((x) => !i.kind || x.kind === i.kind);
+    const describe = (x: Insight) => {
+      switch (x.kind) {
+        case "payment_plan_candidate": return { invoice: x.invoiceNumber ?? x.invoiceId, due: m(x.dueCents, x.currency), daysOverdue: x.daysOverdue, directorPressure: x.pressure, offerUnderYourPolicy: offerLabel(x.offer), action: "Offer payment plan (owner clicks it on the briefing card; it drafts a reminder for approval)" };
+        case "possible_outside_payment": return { invoice: x.invoiceNumber ?? x.invoiceId, due: m(x.moneyAtStakeCents, x.currency), paypalPayment: m(x.paymentCents, x.currency), paymentDate: x.paymentDate, paypalLinksItTo: x.linkedTo, action: "Hold reminder (owner clicks it on the briefing card; Kairos-side, no PayPal change)" };
+        case "cash_forecast": return { expectedNext14Days: m(x.expectedCents, x.currency), cashTarget: x.targetCents ? m(x.targetCents, x.currency) : null, shortfall: x.targetCents ? m(x.shortfallCents, x.currency) : null, confidence: x.confidence, confidenceNote: x.confidenceNote, biggestExpected: x.top.map((t) => ({ invoice: t.invoiceNumber, expected: m(t.expectedCents, x.currency), around: t.expectedDate })) };
+        case "slow_payer": return { averageDaysLate: x.avgDaysLate, paidInvoices: x.paidInvoices, onTimeRatio: x.onTimeRatio, owesNow: m(x.openCents, x.currency) };
+      }
+    };
+    return {
+      data: { today: ctx.today, insights: list.map((x) => ({ kind: x.kind, customer: x.customer, moneyAtStake: m(x.moneyAtStakeCents, x.currency), ...describe(x) })),
+        note: "Computed by code from invoices, the send ledger, PayPal Transaction Search and the Director. The cash forecast is a probability-weighted estimate, not a promise." },
+      untrusted: { customerNames: Object.fromEntries(list.filter((x) => x.customer).map((x) => [x.customer!, names[x.customer!] ?? null])) },
+    };
+  },
+
   async get_director_plan(i, ctx) {
     const { invoices } = await ctx.listAll();
     const plan = await loadDirectorPlan({ invoices, today: ctx.today });

@@ -8,6 +8,9 @@ import { createBudget } from "@/lib/agent/budget";
 import { cleanUntrusted } from "@/lib/agent/untrusted";
 import { chatModel, structuredCall } from "@/lib/llm/client";
 import { amountDue, currencyOf, daysOverdue, recipientEmail, type Totals } from "@/lib/invoice-stats";
+import { topInsights } from "@/lib/insights/compute";
+import { loadInsights } from "@/lib/insights/load";
+import { toCards, type Card } from "@/lib/insights/phrasing";
 
 /**
  * The briefing shown when the Kairos panel opens on an empty conversation.
@@ -46,7 +49,7 @@ export type BriefingFacts = {
 };
 
 export type Chip = { label: string; ask?: string; href?: string };
-export type Briefing = { text: string; chips: Chip[]; facts: BriefingFacts; wording: "model" | "code" };
+export type Briefing = { text: string; chips: Chip[]; facts: BriefingFacts; wording: "model" | "code"; cards: Card[] };
 
 const fmtMoney = (value: string, currency: string) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency }).format(Number(value));
@@ -234,6 +237,17 @@ export async function getBriefing(): Promise<Briefing> {
     receivedThisWeek(localDate()),
   ]);
   const facts = factsFrom(d, proposals, sentToday, received);
-  const { template, wording } = await templateFor(facts);
-  return { text: render(template, facts), chips: chipsFor(facts), facts, wording };
+  const [{ template, wording }, cards] = await Promise.all([templateFor(facts), insightCards()]);
+  return { text: render(template, facts), chips: chipsFor(facts), facts, wording, cards };
+}
+
+/** The top 3 insights as cards (numbers from code, wording cached). Never breaks the briefing. */
+async function insightCards(): Promise<Card[]> {
+  try {
+    const { insights, names } = await loadInsights();
+    return await toCards(topInsights(insights, 3), names);
+  } catch (err) {
+    console.warn("[briefing] insights unavailable:", (err as Error).name, (err as Error).message);
+    return [];
+  }
 }

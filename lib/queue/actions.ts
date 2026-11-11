@@ -62,6 +62,11 @@ export async function approveProposal(proposalId: string, actor: string): Promis
     throw new QueueError(409, "STALE_RULES", `Drafted under rules ${p.rulesVersion ?? "(unversioned)"}, current rules are ${rules} (code or incentive policy changed). Reject it and re-run the agent.`);
   }
 
+  const onHold = await store.activeHoldFor(p.invoiceId);
+  if (onHold) {
+    throw new QueueError(409, "ON_HOLD", `This invoice is on hold (${onHold.reason}). Clear the hold on the Director page before sending a reminder.`);
+  }
+
   // Integrity: the stored hash must still describe the stored content.
   if (hashDraft(p) !== p.draftHash) {
     await store.audit({ actor, event: "approval.hash_mismatch", entityType: "proposal", entityId: p.id, data: { stored: p.draftHash } });

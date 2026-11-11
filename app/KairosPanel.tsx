@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import InsightCards, { type InsightCard } from "./InsightCards";
 
 /**
  * The Kairos assistant, docked beside the page (a slide-up drawer on phones).
@@ -19,7 +20,7 @@ type Item =
 
 type Outcome = { invoiceNumber: string | null; outcome: string };
 type BriefingChip = { label: string; ask?: string; href?: string };
-type Briefing = { text: string; chips: BriefingChip[] };
+type Briefing = { text: string; chips: BriefingChip[]; cards?: InsightCard[] };
 
 const SESSION_KEY = "kairos.chat.session";
 const readSession = () => { try { return localStorage.getItem(SESSION_KEY); } catch { return null; } };
@@ -173,6 +174,7 @@ export default function KairosPanel({ invoiceId = null, invoiceNumber = null }: 
                   ? <Link key={c.label} href={c.href} className="kp-chip">{c.label}</Link>
                   : <button key={c.label} className="kp-chip" onClick={() => send(c.ask ?? c.label)} disabled={busy}>{c.label}</button>)}
               </div>
+              <InsightCards cards={briefing.cards ?? []} onAsk={(q) => send(q)} disabled={busy} />
             </div>
           )}
           {items.length === 0 && briefing === "loading" && <div className="kp-activity running"><span className="dot" aria-hidden />Catching up on your invoices…</div>}

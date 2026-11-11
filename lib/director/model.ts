@@ -76,6 +76,8 @@ export type DirectorInput = {
   paymentPlan: PaymentPlanPolicy;
   /** Owner: cash needed in the next 14 days (0 = no target). */
   cashTarget14d: number;
+  /** Active Kairos-side holds: the invoice waits until the owner clears it. */
+  holds?: { invoiceId: string; reason: string }[];
 };
 
 // ---- Output -------------------------------------------------------------------------------------
@@ -117,7 +119,7 @@ export type InvoiceMove = {
   reason: string;
   factors: Factor[];
   /** Which hard rule decided, if one did. */
-  rule: "grace" | "cooldown" | "escalation" | "relief" | null;
+  rule: "grace" | "cooldown" | "escalation" | "relief" | "hold" | null;
   /** Forecast: probability of being paid and expected date. */
   pPaid: number;
   expectedDate: string;
@@ -331,6 +333,8 @@ function scoreInvoice(inv: DirectorInvoice, input: DirectorInput, h: CustomerHis
 
   // Hard rules first: they always win.
   if (days < GRACE_DAYS) return { ...base, move: "wait", day: addDays(inv.dueDate!, GRACE_DAYS), rule: "grace", reason: `In the ${GRACE_DAYS}-day grace period; no reminder before ${addDays(inv.dueDate!, GRACE_DAYS)}.` };
+  const hold = input.holds?.find((x) => x.invoiceId === inv.invoiceId);
+  if (hold) return { ...base, move: "wait", day: null, rule: "hold", reason: `On hold until you clear it: ${hold.reason}` };
   if (days > ESCALATE_AFTER_DAYS) return { ...base, move: "escalate", day: today, rule: "escalation", reason: `${days} days overdue (over ${ESCALATE_AFTER_DAYS}): policy sends it to you, no automated reminder.` };
   if (relief) return { ...base, move: "wait", day: null, rule: "relief", reason: `Pause: the customer ${relief}. Pressure dropped to ${pressure}; no reminder for now.` };
 

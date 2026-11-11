@@ -9,7 +9,7 @@ type Summary = {
   halted: { cap: string; message: string } | null;
 };
 
-const REASON: Record<string, string> = { in_queue: "already awaiting approval", needs_human: "waiting on you", grace_period: "in the 3-day grace period", cooldown: "reminded in the last 7 days", director_wait: "the Director says wait", director_scheduled: "the Director scheduled it for a later day" };
+const REASON: Record<string, string> = { in_queue: "already awaiting approval", needs_human: "waiting on you", grace_period: "in the 3-day grace period", cooldown: "reminded in the last 7 days", director_wait: "the Director says wait", on_hold: "on hold until you clear it", director_scheduled: "the Director scheduled it for a later day" };
 
 export default function RunAgentButton() {
   const router = useRouter();

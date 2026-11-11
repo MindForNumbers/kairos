@@ -57,11 +57,13 @@ async function withDetail(summaries: Invoice[]): Promise<Invoice[]> {
 export async function gatherDirectorInput(opts: { invoices?: Invoice[]; today?: string } = {}): Promise<DirectorInput> {
   const today = opts.today ?? localDate();
   const store = getStore();
-  const [summaries, ledger, policy, received] = await Promise.all([
+  const [summaries, ledger, holds, policy, received] = await Promise.all([
     opts.invoices ? Promise.resolve(opts.invoices) : listAllInvoices().then((r) => r.invoices),
     store.listLedger({ limit: 2000 }),
+    store.listHolds({ active: true }),
     currentPolicy(),
-    listPaymentsReceived(startOfLocalDate(addDays(today, -14)), startOfLocalDate(addDays(today, 1))),
+    // 30 days: the Director's relief window is 7, the "payment outside the invoice" insight looks back 30.
+    listPaymentsReceived(startOfLocalDate(addDays(today, -30)), startOfLocalDate(addDays(today, 1))),
   ]);
   const invoices = (await withDetail(summaries)).filter((i) => i.status !== "DRAFT" && i.status !== "CANCELLED").map(toDirectorInvoice);
   return {
@@ -73,6 +75,7 @@ export async function gatherDirectorInput(opts: { invoices?: Invoice[]; today?: 
       : null,
     paymentPlan: policy.policy,
     cashTarget14d: policy.director.cashTarget14d,
+    holds: holds.map((h) => ({ invoiceId: h.invoiceId, reason: h.reason })),
   };
 }
 

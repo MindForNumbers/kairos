@@ -105,7 +105,7 @@ afterEach(() => {
 
 test("tool allowlist: read-only tools plus exactly one draft-request action", () => {
   assert.deepEqual([...TOOL_NAMES].sort(), [
-    "customer_history", "customers_owing", "get_director_plan", "get_invoice", "get_queue", "get_report", "get_summary", "list_invoices",
+    "customer_history", "customers_owing", "get_director_plan", "get_insights", "get_invoice", "get_queue", "get_report", "get_summary", "list_invoices",
     "preview_overdue", "recent_payments", "recent_sends", "reminder_history", "request_reminder_proposals",
   ]);
 });

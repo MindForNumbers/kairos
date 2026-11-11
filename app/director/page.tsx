@@ -4,6 +4,8 @@ import { loadDirectorPlan } from "@/lib/director/gather";
 import { DIRECTOR_PARAMS, MOVE_LABEL, WEEKDAYS, weekdayOf, type Move } from "@/lib/director/model";
 import { formatAmount } from "@/lib/agent/policy";
 import Meter from "../Meter";
+import ClearHoldButton from "./ClearHoldButton";
+import { getStore } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,7 @@ export default async function DirectorPage() {
     );
   }
   const f = plan.forecast;
+  const holds = await getStore().listHolds({ active: true });
   return (
     <>
       <div className="page-head">
@@ -44,6 +47,28 @@ export default async function DirectorPage() {
         <div><label>PayPal payments (Transaction Search)</label><div>{plan.receivedAvailable ? "read" : "unavailable"}</div><div className="muted">a recent payment pauses reminders</div></div>
       </section>
       <p className="muted section-help">{f.confidenceNote}</p>
+
+      {holds.length > 0 && (
+        <>
+          <h2>On hold <span className="count">{holds.length}</span></h2>
+          <p className="muted section-help">Kairos won&apos;t draft or send reminders for these invoices until you clear the hold. Nothing was changed in PayPal.</p>
+          <div className="card">
+            <table>
+              <thead><tr><th>Invoice</th><th>Why</th><th>Since</th><th /></tr></thead>
+              <tbody>
+                {holds.map((h) => (
+                  <tr key={h.id}>
+                    <td><Link href={`/invoices/${h.invoiceId}`}>{plan.moves.find((m) => m.invoiceId === h.invoiceId)?.invoiceNumber ?? h.invoiceId}</Link></td>
+                    <td className="muted">{h.reason}</td>
+                    <td>{h.createdAt.slice(0, 10)}</td>
+                    <td><ClearHoldButton holdId={h.id} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <h2>Customers <span className="count">{plan.customers.length}</span></h2>
       {plan.customers.length === 0 && <div className="card muted">No overdue invoices.</div>}

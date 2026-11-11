@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { now as clockNow, nowIso } from "../clock";
 import { hashDraft } from "./draft-hash";
 import type {
-  Approval, AuditEvent, ChatMessage, ClaimResult, LedgerEntry, PolicyVersion, Proposal, ProposalStatus, Run, Store,
+  Approval, AuditEvent, ChatMessage, ClaimResult, Hold, LedgerEntry, PolicyVersion, Proposal, ProposalStatus, Run, Store,
 } from "./types";
 
 // Each entry runs once, in order; PRAGMA user_version records progress.
@@ -213,7 +213,34 @@ const MIGRATIONS: string[] = [
   CREATE TRIGGER incentive_policies_no_delete BEFORE DELETE ON incentive_policies
   BEGIN SELECT RAISE(ABORT, 'incentive_policies are append-only'); END;
   `,
+  `
+  -- Kairos-side holds (block drafting until the owner clears them). Holds and clears are append-only.
+  CREATE TABLE invoice_holds (
+    id          TEXT PRIMARY KEY,
+    invoice_id  TEXT NOT NULL,
+    reason      TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    actor       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+  );
+  CREATE INDEX invoice_holds_invoice ON invoice_holds(invoice_id);
+  CREATE TABLE invoice_hold_clears (
+    hold_id     TEXT PRIMARY KEY REFERENCES invoice_holds(id),
+    actor       TEXT NOT NULL,
+    at          TEXT NOT NULL
+  );
+  CREATE TRIGGER invoice_holds_no_update BEFORE UPDATE ON invoice_holds
+  BEGIN SELECT RAISE(ABORT, 'invoice_holds are append-only'); END;
+  CREATE TRIGGER invoice_holds_no_delete BEFORE DELETE ON invoice_holds
+  BEGIN SELECT RAISE(ABORT, 'invoice_holds are append-only'); END;
+  CREATE TRIGGER invoice_hold_clears_no_update BEFORE UPDATE ON invoice_hold_clears
+  BEGIN SELECT RAISE(ABORT, 'invoice_hold_clears are append-only'); END;
+  CREATE TRIGGER invoice_hold_clears_no_delete BEFORE DELETE ON invoice_hold_clears
+  BEGIN SELECT RAISE(ABORT, 'invoice_hold_clears are append-only'); END;
+  `,
 ];
+
+const HOLD_SELECT = `SELECT h.*, c.actor AS c_actor, c.at AS c_at FROM invoice_holds h LEFT JOIN invoice_hold_clears c ON c.hold_id = h.id`;
 
 /** Proposal columns plus its resolution (if any). */
 const PROPOSAL_SELECT = `SELECT p.*, r.action AS r_action, r.note AS r_note, r.actor AS r_actor, r.at AS r_at
@@ -258,6 +285,12 @@ const toLedger = (r: Row): LedgerEntry => ({
 
 const toPolicy = (r: Row): PolicyVersion => ({
   version: r.version as number, createdAt: r.created_at as string, actor: r.actor as string, policy: unjson(r.policy as string),
+});
+
+const toHold = (r: Row): Hold => ({
+  id: r.id as string, invoiceId: r.invoice_id as string, reason: r.reason as string, source: r.source as string,
+  actor: r.actor as string, createdAt: r.created_at as string,
+  cleared: r.c_at ? { actor: r.c_actor as string, at: r.c_at as string } : null,
 });
 
 const toAudit = (r: Row): AuditEvent => ({
@@ -515,6 +548,39 @@ export function openSqliteStore(path: string): Store {
         writeAudit({ actor: input.actor, event: "policy.incentives.saved", entityType: "incentive_policy", entityId: String(row.version), data: input.policy });
         return row;
       })();
+    },
+
+    async createHold(input) {
+      return db.transaction(() => {
+        const active = db.prepare(`${HOLD_SELECT} WHERE h.invoice_id = ? AND c.hold_id IS NULL`).get(input.invoiceId) as Row | undefined;
+        if (active) throw new Error(`invoice ${input.invoiceId} is already on hold (${active.id})`);
+        const hid = id("hld");
+        db.prepare("INSERT INTO invoice_holds (id, invoice_id, reason, source, actor, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+          .run(hid, input.invoiceId, input.reason, input.source, input.actor, now());
+        writeAudit({ actor: input.actor, event: "hold.created", entityType: "invoice", entityId: input.invoiceId, data: { holdId: hid, reason: input.reason, source: input.source } });
+        return toHold(db.prepare(`${HOLD_SELECT} WHERE h.id = ?`).get(hid) as Row);
+      })();
+    },
+
+    async clearHold(input) {
+      return db.transaction(() => {
+        const row = db.prepare(`${HOLD_SELECT} WHERE h.id = ?`).get(input.holdId) as Row | undefined;
+        if (!row) throw new Error(`hold ${input.holdId} not found`);
+        if (row.c_at) throw new Error(`hold ${input.holdId} is already cleared`);
+        db.prepare("INSERT INTO invoice_hold_clears (hold_id, actor, at) VALUES (?, ?, ?)").run(input.holdId, input.actor, now());
+        writeAudit({ actor: input.actor, event: "hold.cleared", entityType: "invoice", entityId: row.invoice_id as string, data: { holdId: input.holdId } });
+        return toHold(db.prepare(`${HOLD_SELECT} WHERE h.id = ?`).get(input.holdId) as Row);
+      })();
+    },
+
+    async activeHoldFor(invoiceId) {
+      const r = db.prepare(`${HOLD_SELECT} WHERE h.invoice_id = ? AND c.hold_id IS NULL ORDER BY h.created_at DESC LIMIT 1`).get(invoiceId) as Row | undefined;
+      return r ? toHold(r) : null;
+    },
+
+    async listHolds(filter = {}) {
+      const where = filter.active === true ? "WHERE c.hold_id IS NULL" : filter.active === false ? "WHERE c.hold_id IS NOT NULL" : "";
+      return (db.prepare(`${HOLD_SELECT} ${where} ORDER BY h.created_at DESC LIMIT ?`).all(filter.limit ?? 200) as Row[]).map(toHold);
     },
 
     async hasWebhookEvent(eventId) {

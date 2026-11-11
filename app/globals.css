@@ -222,3 +222,13 @@ a.kp-chip { text-decoration: none; display: inline-block; }
 .director-line { display: flex; gap: 12px; align-items: center; margin: 8px 0; font-size: .9rem; }
 .director-row { margin-bottom: 12px; }
 .director-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+
+/* Insight cards in the briefing */
+.kp-insights { display: grid; gap: 8px; margin-top: 10px; }
+.kp-insight { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); }
+.kp-insight p { margin: 6px 0; font-size: .9rem; }
+.kp-insight-head { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; }
+.kp-insight-money { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kp-chip-primary { background: var(--accent); color: #fff; }
+.kp-insight-done { color: var(--ok); }
+.kp-insight-error { color: var(--danger); }

@@ -105,6 +105,21 @@ const rules = [
     forbid: /getStore|from\s+["']node:|\bnow\(|nowMs\(|localDate\(|Math\.random/,
   },
   {
+    name: "lib/insights/ only reads: no PayPal client, queue, executor, HTTP or store writes (its actions live in lib/queue/insight-actions.ts)",
+    applies: (f) => f.startsWith("lib/insights/"),
+    forbid: /from\s+["']@\/lib\/(paypal|queue|executor)\b|\bfetch\(|\.(createHold|clearHold|createApproval|claimApproval|recordAgentSend|recordManualSend|updateProposalStatus|resolveProposal|createProposal|createRun|appendIncentivePolicy)\(|\brunAgent\b/,
+  },
+  {
+    name: "lib/insights/compute.ts is pure: no I/O, store, model or clock reads",
+    applies: (f) => f === "lib/insights/compute.ts",
+    forbid: /getStore|from\s+["']node:|@\/lib\/llm|structuredCall|\bnow\(|nowMs\(|localDate\(|Math\.random/,
+  },
+  {
+    name: "Holds are created and cleared only through lib/queue/insight-actions.ts",
+    applies: (f) => /^(lib|app|scripts)\//.test(f) && !f.startsWith("lib/db/") && f !== "lib/queue/insight-actions.ts" && f !== "scripts/check-boundaries.mjs",
+    forbid: /\.(createHold|clearHold)\(/,
+  },
+  {
     name: "The executor is code, not a model: no LLM calls in lib/executor/",
     applies: (f) => f.startsWith("lib/executor/"),
     forbid: /from\s+["']@\/lib\/llm|structuredCall|@anthropic-ai\/sdk/,

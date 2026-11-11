@@ -78,6 +78,28 @@ The Director reads PayPal only through the agent's read-only door, plus Transact
 
 If no incentive policy has ever been saved, the reset saves a demo default (pay in parts on, $1,500 cash target). A policy you've saved, even one that's off, is never changed.
 
+## Proactive insights
+
+When the Kairos panel opens, the briefing shows up to three **insight cards** under the summary (`lib/insights/`). Code computes them from data Kairos already has: invoices, the send ledger, PayPal Transaction Search and the Director's plan. They are ranked by money at stake, with at most one card per customer.
+
+| Insight | What it finds | Action |
+|---|---|---|
+| **Large invoice stuck** | an overdue invoice where the Director's move is "offer payment plan" under your policy | **Offer payment plan**: drafts a reminder for that invoice through the normal pipeline (sweep rules → Director → drafter → critic + code checks) and puts it on Approvals. Nothing is sent. |
+| **Possible payment outside the invoice** | a PayPal payment in the last 30 days from a customer, for exactly the amount due on one of their open invoices, and not linked to that invoice | **Hold reminder**: a Kairos-side hold. Nothing changes in PayPal. The invoice isn't drafted, and a waiting draft can't be approved, until you clear the hold on the Director page. |
+| **Cash over the next 14 days** | expected inflow from open invoices, using each customer's usual lateness and likelihood of paying, against your cash target, with a confidence note | ask the chat |
+| **Slow payer** | customers with 2+ paid invoices who pay 14+ days late on average and still owe money | ask the chat |
+
+- **Wording:** code inserts every number and name. Haiku only phrases: it writes one template per card shape with placeholders and no digits, never sees a number or any customer text, and code fills the values in. Templates are cached and regenerated at most once an hour, and code's own wording is the fallback. The spend caps apply.
+- **Chat:** the read-only `get_insights` tool answers "any risks?", "what's my cash looking like?" and "how does Maya usually pay?". The chat can't take the actions; only the owner clicks them.
+- **Re-checked:** each action re-checks on the server that its insight still applies.
+- **Boundaries:** `lib/insights/` only reads, and `compute.ts` is pure. Holds are created and cleared only in `lib/queue/insight-actions.ts`. Holds and their clears are append-only rows, and both are audited.
+
+**In the demo:**
+- **Large invoice stuck:** Maya's $2,350 invoice.
+- **Slow payer:** Maya.
+- **Cash forecast:** always shown.
+- **Possible payment outside the invoice:** Daniel's open $250 invoice matches the real $250 PayPal payment made from his sandbox account. That payment ages out of the 30-day window. To recreate the insight, pay any invoice from one of the sandbox customer accounts, then reseed a matching amount.
+
 ## Pay in parts (owner-defined payment plans)
 
 Getting paid sometimes means letting a customer pay part now. On **Incentives** (`/settings/incentives`) the owner turns this on and sets the limits: minimum amount due, minimum days overdue, maximum number of parts and minimum payment per part. This is PayPal's **partial payments** on the invoice: the customer chooses when to pay each part. It is not an auto-charged installment plan.

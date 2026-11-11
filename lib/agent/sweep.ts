@@ -61,7 +61,7 @@ export type SweepResult = {
   /** Overdue and eligible, but beyond this run's set. Next run. */
   deferred: InvoiceRecord[];
   /** Overdue but held back by code, with the reason. */
-  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "in_queue" | "needs_human" | "director_wait" | "director_scheduled"; detail: string }[];
+  excluded: { invoiceId: string; invoiceNumber: string | null; daysOverdue: number; reason: "grace_period" | "cooldown" | "on_hold" | "in_queue" | "needs_human" | "director_wait" | "director_scheduled"; detail: string }[];
   openNotDue: { invoiceId: string; invoiceNumber: string | null; dueDate: string; amountDue: string | null }[];
   counts: { listed: number; open: number; overdue: number };
   truncated: boolean;
@@ -193,6 +193,13 @@ export async function sweep(opts: SweepOptions = {}): Promise<SweepResult> {
     if (last && Date.parse(last.sentAt) > cooldownStart) {
       excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days, reason: "cooldown",
         detail: `last reminder ${last.sentAt} (${last.source})` });
+      continue;
+    }
+    // A Kairos-side hold (e.g. "possible payment outside the invoice") blocks drafting until the owner clears it.
+    const ownerHold = await store.activeHoldFor(summary.id);
+    if (ownerHold) {
+      excluded.push({ invoiceId: summary.id, invoiceNumber: summary.detail.invoice_number ?? null, daysOverdue: days, reason: "on_hold",
+        detail: `on hold since ${ownerHold.createdAt.slice(0, 10)}: ${ownerHold.reason}` });
       continue;
     }
     const hold = await holdingProposal(summary.id);
