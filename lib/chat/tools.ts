@@ -213,10 +213,15 @@ const HANDLERS: Record<string, (input: Input, ctx: ToolContext) => Promise<ToolR
     const { invoices } = await ctx.listAll();
     const plan = await loadDirectorPlan({ invoices, today: ctx.today });
     const m = (c: number) => money("USD", (c / 100).toFixed(2));
-    const names = Object.fromEntries(invoices.map((inv) => {
+    // PayPal lists newest first: keep the first (newest) name per email, as lib/insights/load.ts does.
+    // (Last-wins would show the name from the customer's OLDEST invoice.)
+    const names: Record<string, string | null> = {};
+    for (const inv of invoices) {
       const b = inv.primary_recipients?.[0]?.billing_info;
-      return [b?.email_address?.toLowerCase() ?? "", cleanUntrusted(b?.name?.full_name || [b?.name?.given_name, b?.name?.surname].filter(Boolean).join(" "), 140)];
-    }).filter(([e]) => e));
+      const email = b?.email_address?.trim().toLowerCase();
+      if (!email || names[email]) continue;
+      names[email] = cleanUntrusted(b?.name?.full_name || [b?.name?.given_name, b?.name?.surname].filter(Boolean).join(" "), 140);
+    }
     const customers = plan.customers.slice(0, clampLimit(i.limit));
     return {
       data: {

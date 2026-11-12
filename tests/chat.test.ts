@@ -205,6 +205,19 @@ test("per-message spend cap stops before the call; the loop is capped at MAX_CAL
   assert.equal(loop.length, MAX_CALLS);
 });
 
+test("get_director_plan names each customer from their newest invoice, not their oldest", async () => {
+  const invs = fixtureInvoices();
+  const email = "customer-demo-08@example.com";
+  const newest = invs.find((i) => i.primary_recipients?.[0]?.billing_info?.email_address === email)!.primary_recipients![0].billing_info!.name!.given_name;
+  // The newest-first list ends with older invoices for the same email under another name.
+  invs.push({ ...invs.at(-1)!, id: "INV2-OLDEST", primary_recipients: [{ billing_info: { email_address: email, name: { given_name: "Paid", surname: "Early" } } }] });
+  setPaypalReadsForTesting({ listAllInvoices: async () => ({ invoices: invs, truncated: false }), fetchInvoice: async () => { throw new Error("unused"); } });
+  const r = await runTool("get_director_plan", { limit: 10 }, new ToolContext());
+  const names = (r.untrusted as { customerNames: Record<string, string | null> }).customerNames;
+  assert.ok(newest && newest !== "Paid");
+  assert.equal(names[email], newest);
+});
+
 test("business answers: who owes me, customer history", async () => {
   const ctx = new ToolContext();
   const owing = (await runTool("customers_owing", { limit: 10 }, ctx)).data as { customers: { customerEmail: string; owes: { value: string }[]; oldestOverdueDays: number }[] };
