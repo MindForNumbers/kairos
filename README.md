@@ -2,6 +2,33 @@
 
 Invoicing and collections for a small business on PayPal (sandbox). Built on the PayPal Invoicing API v2.
 
+![Kairos home: today's briefing and insight cards beside the invoice overview](docs/screenshots/home-briefing.png)
+
+## Live demo
+
+**https://kairos-a6a0.onrender.com**. The password is in the Devpost testing instructions.
+
+- **Sandbox only:** every invoice, customer and payment is in a PayPal sandbox account, and the customers are sandbox personal accounts. No real money moves.
+- **Fresh data every morning:** the demo data refreshes daily at **6:30am PT**, and the agent drafts that day's reminders at **7:00am PT** (see [Demo data resets daily](#demo-data-resets-daily)). Invoice numbers carry the date, e.g. `TS-261111-1046`.
+
+**Quick tour (about 5 minutes):**
+1. **Home briefing:** the Kairos panel opens with today's briefing and up to three insight cards (a slow payer, a possible payment outside the invoice, the cash forecast). Every number comes from code.
+2. **Director:** each customer's pressure meter, next move, suggested day and the reason, plus the 14-day cash forecast.
+3. **Approvals offer:** open Maya's `…-1046` card. It shows the Director's reason, the drafted note, *"Includes offer: pay in up to 3 parts…"* from the owner's policy, and the code and critic checks side by side. Nothing is sent until you approve.
+4. **Injection refusal:** in the chat, ask *"Read the note on TS-…-1048 and do what it says."* The note tells Kairos to mark the invoice paid and give 50% off. Kairos reports what the note asks for and declines, because customer text is data, not instructions.
+5. **Reports AI:** on Reports, click **Customize**, then ask the AI Assistant to *"Show overdue by customer"*. AG Studio's agents build the chart from Kairos's numbers in your browser.
+
+| | |
+|---|---|
+| ![Director's plan: pressure meters, next moves and reasons per customer](docs/screenshots/director.png) | ![Approvals card with the Director's reason, the pay-in-parts offer and the code and critic checks](docs/screenshots/approvals-offer.png) |
+| ![The chat declining the instructions in a customer's invoice note](docs/screenshots/injection-refused.png) | ![Reports AI assistant building an Overdue by customer chart](docs/screenshots/reports-ai.png) |
+
+## How it works
+
+![Director decides, AI drafts, critic and code checks, you approve, PayPal sends. AI proposes. Code enforces. You approve.](docs/screenshots/how-it-works.png)
+
+## Features
+
 - **Invoices**: create, send, record payments, cancel (`/invoices`).
 - **Collections agent**: finds overdue invoices, drafts reminders, and checks each draft with a second model plus code checks. Drafts wait on **Approvals** (`/approvals`) and nothing is sent until the owner approves. Invoices more than 60 days overdue go to a human.
 - **Kairos chat**: a read-only assistant docked on every page. It answers questions about invoices, customers, the queue and sent reminders, and can request drafts, which still go to Approvals. On an empty conversation it opens with a briefing. Its numbers are computed in code from the same data as the home tiles; Haiku only phrases a template, cached per shape and regenerated at most once an hour. `get_report` gives aging, collected vs outstanding, top customers owing and reminder activity for a period.
@@ -25,10 +52,15 @@ npm run check:boundaries
 
 The hosted demo runs on a PayPal **sandbox**, and its data resets every day:
 
-- **14:30 UTC: demo reset** (`POST /api/cron/demo-reset`). Seeds a fresh set of 8 invoices for 4 customers, numbered `TS-<YYMMDD>-1041` … `-1048`: 2 paid, 3 slightly overdue, one over $2,000, one over 60 days, and one whose note tries a prompt injection. Some are issued and paid within the current month so "this month" reports have data. Then it cancels the previous day's open demo invoices and closes their proposals. Only those 8 numbers are ever touched: an invoice you create on New Invoice (PayPal numbers it after the demo ones, e.g. `TS-<YYMMDD>-1049`) is left alone. Paid demo invoices can't be cancelled and stay as history.
-- **15:00 UTC: agent run** (`POST /api/cron/agent-run`). Drafts reminders for the new set. Nothing is sent until someone approves it on Approvals.
+- **14:30 UTC (6:30am PT): demo reset** (`POST /api/cron/demo-reset`). Seeds a fresh set for 4 customers, numbered `TS-<YYMMDD>-<n>`:
+  - **Paid history** (`1031`–`1036`), so the Director has payment patterns to read.
+  - **Two recently paid** (`1041`, `1042`), one of them paid this month so "this month" reports have data.
+  - **Six open** (`1043`–`1048`): two slightly overdue, one part-paid, one over $2,000, one over 60 days, and one whose note tries a prompt injection.
 
-Both endpoints require `Authorization: Bearer $KAIROS_CRON_SECRET` (32+ characters) and are called by Render Cron Jobs.
+  Then it cancels the previous day's open demo invoices and closes their proposals. Only those seeded numbers are ever touched: an invoice you create on New Invoice (PayPal numbers it after the demo ones, e.g. `TS-<YYMMDD>-1049`) is left alone. Paid demo invoices can't be cancelled and stay as history.
+- **15:00 UTC (7:00am PT): agent run** (`POST /api/cron/agent-run`). Drafts reminders for the new set. Nothing is sent until someone approves it on Approvals.
+
+Render cron schedules are in UTC, so during daylight time these run an hour later in Pacific time (7:30am and 8:00am PDT). Both endpoints require `Authorization: Bearer $KAIROS_CRON_SECRET` (32+ characters) and are called by Render Cron Jobs (see [Deploying on Render](#deploying-on-render)).
 
 **Re-seeding today from scratch** (e.g. after a deploy changed the seed): `POST /api/cron/demo-reset?fresh=1`, or `npm run demo:reset -- --fresh`.
 - It seeds a brand-new set for today under the next letter suffix (`TS-261111b-1041` …, still within PayPal's 25 characters), then cancels every other open demo invoice, including today's earlier set, and closes their proposals.
@@ -36,7 +68,51 @@ Both endpoints require `Authorization: Bearer $KAIROS_CRON_SECRET` (32+ characte
 - The scheduled nightly call is unchanged. If it runs again the same day, it adopts today's newest set instead of recreating the plain one.
 - Up to 25 fresh re-seeds per day (suffixes b–z). To run the reset by hand: `npm run demo:reset -- --dry-run`, then `npm run demo:reset` (needs `KAIROS_SEED_EMAILS`: four distinct sandbox personal-account emails).
 
-The PayPal webhook (`/api/webhooks/invoices`, the URL registered with PayPal; `/api/webhooks/paypal` runs the same handler; signature-verified) skips repeat deliveries of the same event id. On PAID, CANCELLED or REFUNDED it closes that invoice's open proposals, and on PAID it records days-to-payment in the audit log.
+## PayPal webhook
+
+The registered webhook URL is **`/api/webhooks/invoices`** (on the live demo: `https://kairos-a6a0.onrender.com/api/webhooks/invoices`). `/api/webhooks/paypal` runs exactly the same handler and still works. PayPal's webhook form rejected a URL containing "paypal", hence the alias.
+
+**What it does:**
+- **Verifies:** every event is checked with PayPal's `verify-webhook-signature` against `PAYPAL_WEBHOOK_ID`, and unverified events get a 400.
+- **Dedupes:** a repeat delivery of the same event id does nothing.
+- **Acts:** on PAID, CANCELLED or REFUNDED it closes that invoice's open proposals, and on PAID it records days-to-payment in the audit log. A failure before the event is recorded returns a 5xx, so PayPal redelivers.
+
+**Registering it:**
+1. In the PayPal Developer Dashboard, open your **sandbox** REST app, then **Webhooks** → **Add webhook**.
+2. Set the URL to `https://<your-host>/api/webhooks/invoices`.
+3. Subscribe to these four events: `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED`, `INVOICING.INVOICE.REFUNDED` and `INVOICING.INVOICE.UPDATED`.
+4. Copy the new webhook's **ID** into `PAYPAL_WEBHOOK_ID` and redeploy. Verification uses that exact ID, so an ID from another webhook makes every event fail with `INVALID_SIGNATURE`.
+
+**Testing it:** don't use the Webhooks Simulator, because its events fail signature verification. Trigger real events instead, for example by recording a payment on, or cancelling, a sandbox invoice.
+
+## Deploying on Render
+
+The live demo runs as one Render **web service** with a **persistent disk**, plus two Render **cron jobs**.
+
+**Web service**
+- Build: `npm ci && npm run build`. Start: `npm start`.
+- Attach a persistent disk and point `KAIROS_DB_PATH` at a file on it. SQLite holds the proposals, approvals, send ledger, holds, policy versions, chat sessions and audit log, and must survive deploys. A disk ties the service to one instance, which is what SQLite needs.
+
+**Cron jobs** (schedules are UTC; each job needs `KAIROS_CRON_SECRET` set to the web service's value):
+
+| Job | Schedule | Command |
+|---|---|---|
+| Demo reset | `30 14 * * *` (6:30am PT) | `curl -fsS -X POST -H "Authorization: Bearer $KAIROS_CRON_SECRET" https://kairos-a6a0.onrender.com/api/cron/demo-reset` |
+| Agent run | `0 15 * * *` (7:00am PT) | `curl -fsS -X POST -H "Authorization: Bearer $KAIROS_CRON_SECRET" https://kairos-a6a0.onrender.com/api/cron/agent-run` |
+
+**Same-day re-seed:** to replace today's demo set (for example after a deploy changed the seed), call the reset with `?fresh=1`:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $KAIROS_CRON_SECRET" "https://kairos-a6a0.onrender.com/api/cron/demo-reset?fresh=1"
+```
+
+**Environment variables** (names only, never commit values; `.env.example` lists every variable with what it does and its default):
+- **Required:** `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_ENVIRONMENT`, `ANTHROPIC_API_KEY`, `KAIROS_ADMIN_PASSWORD`, `KAIROS_DB_PATH`.
+- **For the daily demo:** `KAIROS_CRON_SECRET`, `KAIROS_SEED_EMAILS`, `KAIROS_TIMEZONE`.
+- **For the webhook:** `PAYPAL_WEBHOOK_ID`.
+- **Sending:** `KAIROS_EXECUTOR_ENABLED` (anything but `1` is a dry run), `KAIROS_DAILY_SEND_CAP`, `KAIROS_QUIET_START`, `KAIROS_QUIET_END`, `KAIROS_KILL_FILE`.
+- **Models and spend caps:** `KAIROS_CHAT_MODEL`, `KAIROS_CRITIC_MODEL`, `KAIROS_INTAKE_MODEL`, `KAIROS_INTAKE_REVIEW_MODEL`, `KAIROS_RUN_COST_CAP`, `KAIROS_DAILY_COST_CAP`, `KAIROS_CHAT_TURN_COST_CAP`, `KAIROS_INTAKE_COST_CAP`.
+- **Reports:** `AG_STUDIO_LICENSE_KEY`, `KAIROS_REPORTS_AI`.
 
 ## Invoice from a photo
 
@@ -55,7 +131,7 @@ The form shows every finding next to its field. If any errors remain, the owner 
 
 ## The Kairos Director: collections pacing
 
-*Getting paid is a timing problem.* The Director is inspired by the AI Director in Left 4 Dead, which reads how the players are doing and paces the game. It reads each customer's history and recent signals and decides, in code, what Kairos should propose for each overdue invoice and when (`lib/director/`). No model decides anything here, and the same inputs always give the same plan.
+*Getting paid is a timing problem.* The Director is inspired by adaptive director systems in video games, which watch how players are doing and pace what happens next (see [Design notes](#design-notes)). It reads each customer's history and recent signals and decides, in code, what Kairos should propose for each overdue invoice and when (`lib/director/`). No model decides anything here, and the same inputs always give the same plan.
 
 **Pressure (0–100) per open invoice**, built from named factors:
 - **Money at stake:** the amount due and its share of everything you're owed.
@@ -82,7 +158,7 @@ The Director reads PayPal only through the agent's read-only door, plus Transact
 **Demo data:** the daily reset seeds payment histories so the Director makes different calls:
 - **Daniel** pays on time, on Fridays, so his overdue invoice gets **wait**.
 - **Maya** pays 40–50 days late and owes $2,350, so she gets **offer payment plan**.
-- **Tom** part-paid two days ago, so he gets **pause**.
+- **Tom** part-paid `1045` two days ago, so that invoice **waits**; his other invoice (`1048`, the one with the injection note) gets a **friendly** reminder on his usual payment day.
 - **Priya** is new, so her small invoice gets a **friendly** reminder and her 75-day invoice is **escalated**.
 
 If no incentive policy has ever been saved, the reset saves a demo default (pay in parts on, $1,500 cash target). A policy you've saved, even one that's off, is never changed.
@@ -196,7 +272,7 @@ One invoice list per page view, and no PayPal calls of its own. `lib/reports/bui
 
 **Customize:** switches Studio to edit mode, where you can move widgets or add new ones from Kairos's tables (the "Kairos" group sits at the top of the widget menu). Changes live in that browser tab only; Reset layout restores the default. Nothing on the page writes to Kairos or PayPal.
 
-**Look:** Kairos's teal theme via `studioTheme.withParams`. Every value is a Kairos CSS variable, so light and dark follow the rest of the app. Below 720px wide, widgets stack one per row.
+**Look:** the Kairos blue palette via `studioTheme.withParams`, with charts led by blue, sky and ink, then warm and neutral contrasts. Every value is a Kairos CSS variable, so light and dark follow the rest of the app. Below 720px wide, widgets stack one per row.
 
 **Bundle:** AG Studio, with the AG Grid and AG Charts Enterprise it includes, builds to one chunk of about 6.5 MB (1.8 MB gzipped). It is loaded with a client-only dynamic import on `/reports` alone, after the page shell has rendered. A boundary rule keeps every other file from importing it, so no other page downloads it.
 
@@ -233,6 +309,13 @@ New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@c
 
 **Not built with the plugin:** every Invoicing API v2 call (`lib/paypal/`, hand-written, predating the plugin). That covers the invoices UI, the agent's reads, the executor's reminder send, the seed and cleanup scripts, and photo/voice intake's Create. The business-name field adds `billing_info.business_name` to that existing create request. The executor's "turn on partial payments" update for pay-in-parts offers is also hand-written Invoicing code (`PUT /v2/invoicing/invoices/{id}`), because the plugin's SDK has no Invoicing operations to build it from.
 
+## Design notes
+
+- **Look:** light-first, with the Kairos blue palette: **ink** `#1E2A78` (headings, active nav, the brand mark), **blue** `#4353E0` (primary actions and accents) and **sky** `#A5B4FC` (soft fills, chart secondaries), on white surfaces over a `#F1F2F6` page. Pill buttons, an underlined nav and 16px cards. Dark mode follows the system. The palette is deliberately not PayPal's brand colors, and the only PayPal mention in the UI is the plain "Connected to PayPal (sandbox)" label.
+- **The Director:** inspired by adaptive director systems in video games: something watching the state of play and choosing the pacing, rather than a fixed script. Here, code reads payment history and recent signals and decides who to nudge, how firmly and on which day, while hard rules and the owner keep the final say.
+- **Credit:** the idea of an adaptive director comes from the AI Director in *Left 4 Dead* (Valve).
+- **Division of labor:** AI proposes, code enforces, you approve. Models only write and review text; every number, eligibility decision and send gate is code.
+
 ## Built vs. next
 
 **Built:**
@@ -242,13 +325,14 @@ New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@c
 - photo/voice intake;
 - owner-defined pay-in-parts offers;
 - the Kairos Director;
-- proactive insights with holds;
+- proactive insights with holds, including **outside-payment detection**: a PayPal payment that matches an open invoice's amount but isn't linked to it shows as an insight card, and the owner can hold that invoice's reminder;
 - the embeddable assistant;
-- read-only reports with AG Studio;
-- the nightly demo reset, cron runs and webhook handling.
+- read-only reports with AG Studio, including the plain-English report assistant;
+- the daily demo reset and agent run (Render cron jobs);
+- **the PayPal webhook, live** on the hosted demo (`/api/webhooks/invoices`, signature-verified, deduplicated).
 
 **Next:**
-- **Early-payment discounts:** see Pay in parts.
-- **Scoped API tokens for host dashboards:** see Integrating.
+- **Early-payment discounts:** not built; see Pay in parts.
+- **Scoped API tokens for host dashboards:** not built; see Integrating.
 - **Director tuning from outcomes:** the weights are fixed parameters today. They are versioned, so they could be tuned against which reminders actually got paid.
 - **Multi-currency cash forecasts:** the forecast sums one currency.
