@@ -33,7 +33,8 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(json);
   if (!parsed.success) return NextResponse.json({ error: "VALIDATION_ERROR", issues: parsed.error.issues.slice(0, 5) }, { status: 400 });
 
-  const turnId = randomUUID().replace(/-/g, "").slice(0, 16);  const { system, messages, tools } = toClaude(parsed.data as unknown as StudioRequest);
+  const turnId = randomUUID().replace(/-/g, "").slice(0, 16);
+  const { system, messages, tools } = toClaude(parsed.data as unknown as StudioRequest);
   try {
     const { response } = await chatCall({
       purpose: "reports_ai", model: chatModel(), system, messages, tools,

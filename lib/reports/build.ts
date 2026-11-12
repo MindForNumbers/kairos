@@ -8,6 +8,7 @@ import { MOVE_LABEL, WEEKDAYS, weekdayOf } from "@/lib/director/model";
 import type { Invoice } from "@/lib/paypal/invoices";
 import { amountDue, currencyOf, daysOverdue, isOpen, recipientEmail, toCents } from "@/lib/invoice-stats";
 import { dueDateOf } from "@/lib/agent/sweep";
+import { cleanUntrusted } from "@/lib/agent/untrusted";
 
 /** The subset of get_report's data this page reads (money as "123.45 USD" strings). */
 export type ReportData = {
@@ -21,7 +22,7 @@ export type ReportData = {
 };
 
 export type InvoiceRow = {
-  id: string; number: string; customer: string; customerEmail: string; status: string;
+  id: string; number: string; customer: string; company: string; customerEmail: string; status: string;
   dueDate: string | null; daysOverdue: number; agingBucket: string; amountDue: number; currency: string;
   pressure: number | null; nextMove: string | null; suggestedDay: string | null; reason: string | null;
 };
@@ -32,6 +33,13 @@ export type ForecastInvoiceRow = { invoice: string; customer: string; expectedDa
 export type OwingRow = { customer: string; customerEmail: string; owes: number; currency: string; openInvoices: number; oldestOverdueDays: number };
 export type PressureRow = { customer: string; customerEmail: string; pressure: number; nextMove: string; suggestedDay: string | null; owes: number; reason: string; onTimeRatio: number | null; avgDaysLate: number | null };
 export type ReminderRow = { activity: string; order: number; count: number };
+/** One row per customer with open invoices, totals computed in code (no aggregation needed to filter on them). */
+export type CustomerRow = {
+  customer: string; company: string; customerEmail: string; currency: string;
+  owes: number; overdue: number; openInvoices: number; overdueInvoices: number;
+  largestInvoice: string; largestInvoiceAmount: number; mostOverdueInvoice: string; maxDaysOverdue: number;
+  pressure: number | null; nextMove: string | null;
+};
 
 export type ReportsData = {
   today: string;
@@ -39,6 +47,7 @@ export type ReportsData = {
   currency: string;
   invoices: InvoiceRow[];
   openInvoices: InvoiceRow[];
+  customers: CustomerRow[];
   aging: AgingRow[];
   cash: CashRow[];
   forecast: ForecastRow;
@@ -79,6 +88,33 @@ const BUCKET_ORDER = ["Not yet due", "1-30 days", "31-60 days", "61+ days"];
 /** Chart-friendly labels for get_report's buckets ("1-30 days past due" → "1-30 days"). */
 export const shortBucket = (b: string) => (b.startsWith("current") ? "Not yet due" : b.replace(" past due", ""));
 
+/**
+ * Per-customer totals over open invoices, summed in integer cents. Lets "who owes more than $X",
+ * "who is most overdue" or "largest invoice per customer" be a plain row filter or sort, with no
+ * aggregation (AG Studio's engine can't filter on an aggregated column it has aliased).
+ */
+export function customersFrom(open: InvoiceRow[], pressure: PressureRow[]): CustomerRow[] {
+  const cents = (n: number) => Math.round(n * 100);
+  const by = new Map<string, InvoiceRow[]>();
+  for (const r of open) by.set(r.customerEmail, [...(by.get(r.customerEmail) ?? []), r]);
+  const pressureBy = new Map(pressure.map((p) => [p.customerEmail, p]));
+  return [...by].map(([email, rows]) => {
+    const largest = rows.reduce((a, b) => (b.amountDue > a.amountDue ? b : a));
+    const oldest = rows.reduce((a, b) => (b.daysOverdue > a.daysOverdue ? b : a));
+    const overdueRows = rows.filter((r) => r.daysOverdue > 0);
+    const p = pressureBy.get(email);
+    return {
+      customer: rows[0].customer, company: rows.find((r) => r.company)?.company ?? "", customerEmail: email, currency: rows[0].currency,
+      owes: rows.reduce((s, r) => s + cents(r.amountDue), 0) / 100,
+      overdue: overdueRows.reduce((s, r) => s + cents(r.amountDue), 0) / 100,
+      openInvoices: rows.length, overdueInvoices: overdueRows.length,
+      largestInvoice: largest.number, largestInvoiceAmount: largest.amountDue,
+      mostOverdueInvoice: oldest.number, maxDaysOverdue: oldest.daysOverdue,
+      pressure: p?.pressure ?? null, nextMove: p?.nextMove ?? null,
+    };
+  }).sort((a, b) => b.owes - a.owes);
+}
+
 export function buildReportsData(opts: {
   invoices: Invoice[];
   report: ReportData;
@@ -102,6 +138,8 @@ export function buildReportsData(opts: {
         id: inv.id,
         number: inv.detail.invoice_number ?? inv.id,
         customer: nameFor(email),
+        // Customer-entered text, cleaned; rendered as text and described to the AI as data.
+        company: cleanUntrusted(inv.primary_recipients?.[0]?.billing_info?.business_name, 80) ?? "",
         customerEmail: email?.toLowerCase() ?? "",
         status: STATUS_LABEL[inv.status] ?? inv.status,
         dueDate: dueDateOf(inv) ?? null,
@@ -162,7 +200,7 @@ export function buildReportsData(opts: {
 
   return {
     today, period: { from: report.period.from, to: report.period.to }, currency,
-    invoices: invoiceRows, openInvoices, aging, cash, forecast, forecastInvoices, owing, pressure, reminders,
+    invoices: invoiceRows, openInvoices, customers: customersFrom(openInvoices, pressure), aging, cash, forecast, forecastInvoices, owing, pressure, reminders,
     paidAfterReminderSummary: r.paidAfterReminderSummary, truncated: !!report.truncated,
   };
 }

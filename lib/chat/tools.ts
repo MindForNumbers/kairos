@@ -164,7 +164,7 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
     input_schema: obj({}) },
   { name: "get_insights", strict: true,
     description: "Proactive insights computed by code, ranked by money at stake: large stuck invoices that qualify for a payment-plan offer, possible payments made outside an invoice (a PayPal payment matching an open invoice's amount), the 14-day cash forecast with its confidence, and slow payers. Read-only. Use for 'any risks?', 'what's my cash looking like?', 'how does <customer> usually pay?' (then customer_history for detail). The owner can act on insights from the briefing cards; you can't.",
-    input_schema: obj({ kind: { type: ["string", "null"], enum: ["payment_plan_candidate", "possible_outside_payment", "cash_forecast", "slow_payer", null], description: "Only this kind, or null for all." } }) },
+    input_schema: obj({ kind: { anyOf: [{ type: "string", enum: ["payment_plan_candidate", "possible_outside_payment", "cash_forecast", "slow_payer"] }, { type: "null" }], description: "Only this kind, or null for all." } }) },
   { name: "get_director_plan", strict: true,
     description: "The Kairos Director's plan: for each customer with overdue invoices, a pressure score (0-100), the next move (wait, friendly, firm, offer payment plan, final notice, escalate), the suggested day and a one-line reason naming the top factors; plus the 14-day cash forecast. Deterministic code, read-only. Use for 'who should I focus on this week, and why?', 'why is Kairos waiting on X?'.",
     input_schema: obj({ limit: { type: "integer", description: "Customers to return, 1 to 50." } }) },

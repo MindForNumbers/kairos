@@ -70,6 +70,11 @@ test("delegate_to's target is normalised to Studio's { id } shape; other args pa
   assert.deepEqual(normalizeArgs("delegate_to", { instructions: "no target" }), { instructions: "no target" });
   assert.deepEqual(normalizeArgs("add_widget", { type: "grid" }), { type: "grid" });
   assert.deepEqual(normalizeArgs("view_page", null), {});
+  // execute_query's query arrives JSON-encoded sometimes; Studio needs the object.
+  assert.deepEqual(normalizeArgs("execute_query", { query: "{\"kind\":\"apiQuery\",\"filter\":{\"value\":2000}}" }), { query: { kind: "apiQuery", filter: { value: 2000 } } });
+  assert.deepEqual(normalizeArgs("execute_query", { query: "not json" }), { query: "not json" });
+  // Delegated agents return their answer through complete_task, so it must reach the model.
+  assert.ok(isReportTool("complete_task"));
 });
 
 test("the conversation always starts and ends with the user (Claude has no assistant prefill)", () => {

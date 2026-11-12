@@ -48,6 +48,19 @@ test("parseMoney is exact to the cent and rejects anything else", () => {
   assert.throws(() => parseMoney("$5,127.50"), /Unexpected money/);
 });
 
+test("customers table: per-customer totals are numbers, so 'owes more than $2,000' is a plain row filter", () => {
+  const withBiz = invoices.map((i) => i.id === "I1" ? { ...i, primary_recipients: [{ billing_info: { email_address: "maya@x.co", business_name: "Okafor Family Dental", name: { full_name: "Maya" } } }] } : i) as typeof invoices;
+  const d = buildReportsData({ invoices: withBiz, report, plan, names: { "maya@x.co": "Maya Okafor", "dan@x.co": null } });
+  for (const c of d.customers) for (const k of ["owes", "overdue", "largestInvoiceAmount", "maxDaysOverdue"] as const) assert.equal(typeof c[k], "number", k);
+  assert.deepEqual(d.customers.map((c) => [c.customer, c.company, c.owes, c.overdue, c.openInvoices, c.largestInvoice, c.maxDaysOverdue, c.pressure]), [
+    ["Maya Okafor", "Okafor Family Dental", 2350, 2350, 1, "TS-1", 48, 63],
+    ["dan@x.co", "", 100.1, 0, 1, "TS-2", 0, null],
+  ]);
+  assert.deepEqual(d.customers.filter((c) => c.owes > 2000).map((c) => c.company), ["Okafor Family Dental"]);
+  // Totals agree with get_report's outstanding (cents-exact).
+  assert.equal(Math.round(d.customers.reduce((s, c) => s + c.owes * 100, 0)), 245010);
+});
+
 test("reports reuse get_report's and the Director's numbers unchanged", () => {
   const d = buildReportsData({ invoices, report, plan, names: { "maya@x.co": "Maya Okafor", "dan@x.co": null } });
   assert.deepEqual(d.cash.map((c) => [c.metric, c.amount, c.count]), [["Invoiced this month", 5062.5, 4], ["Collected this month", 5127.5, 3], ["Outstanding now", 2450.1, 2]]);

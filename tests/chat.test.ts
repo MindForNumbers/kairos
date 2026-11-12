@@ -390,3 +390,19 @@ test("get_report collected = PayPal received + payments recorded by hand; falls 
   assert.deepEqual(r2.money.collectedInPeriod, ["480.00 USD"]);
   assert.equal(r2.money.collectedBreakdown.source, "payments recorded on invoices only");
 });
+
+test("tool schemas: every enum value matches its declared type (the API rejects a nullable enum under type ['string','null'])", async () => {
+  const { TOOL_DEFINITIONS } = await import("../lib/chat/tools");
+  const typeOf = (v: unknown) => (v === null ? "null" : Number.isInteger(v) ? "integer" : typeof v);
+  const walk = (node: unknown, path: string) => {
+    if (!node || typeof node !== "object") return;
+    const n = node as { type?: string | string[]; enum?: unknown[] };
+    if (n.enum && n.type) {
+      const types = Array.isArray(n.type) ? n.type : [n.type];
+      for (const v of n.enum) assert.ok(types.includes(typeOf(v)) || (types.includes("number") && typeof v === "number"), `${path}: enum value ${JSON.stringify(v)} is not ${types.join("|")}`);
+      assert.ok(!types.includes("null") || types.length === 1, `${path}: use anyOf [{enum}, {type:"null"}] for a nullable enum`);
+    }
+    for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`);
+  };
+  for (const t of TOOL_DEFINITIONS) walk(t.input_schema, t.name);
+});
