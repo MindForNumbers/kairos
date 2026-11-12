@@ -11,8 +11,9 @@ export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 export const ADMIN_ACTOR = "user:admin";
 
 /** Reachable without a session. The PayPal webhook authenticates by PayPal signature instead. */
+/** /api/webhooks/invoices is the same webhook handler under the URL registered with PayPal. */
 /** Cron endpoints authenticate with a bearer secret instead (lib/cron.ts). */
-export const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/webhooks/paypal", "/api/cron/agent-run", "/api/cron/demo-reset"]);
+export const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/webhooks/paypal", "/api/webhooks/invoices", "/api/cron/agent-run", "/api/cron/demo-reset"]);
 
 function adminPassword(): string | null {
   const pw = process.env.KAIROS_ADMIN_PASSWORD;

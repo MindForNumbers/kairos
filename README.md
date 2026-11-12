@@ -36,7 +36,7 @@ Both endpoints require `Authorization: Bearer $KAIROS_CRON_SECRET` (32+ characte
 - The scheduled nightly call is unchanged. If it runs again the same day, it adopts today's newest set instead of recreating the plain one.
 - Up to 25 fresh re-seeds per day (suffixes b–z). To run the reset by hand: `npm run demo:reset -- --dry-run`, then `npm run demo:reset` (needs `KAIROS_SEED_EMAILS`: four distinct sandbox personal-account emails).
 
-The PayPal webhook (`/api/webhooks/paypal`, signature-verified) skips repeat deliveries of the same event id. On PAID, CANCELLED or REFUNDED it closes that invoice's open proposals, and on PAID it records days-to-payment in the audit log.
+The PayPal webhook (`/api/webhooks/invoices`, the URL registered with PayPal; `/api/webhooks/paypal` runs the same handler; signature-verified) skips repeat deliveries of the same event id. On PAID, CANCELLED or REFUNDED it closes that invoice's open proposals, and on PAID it records days-to-payment in the audit log.
 
 ## Invoice from a photo
 

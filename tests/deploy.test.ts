@@ -5,6 +5,7 @@ import type { Store } from "../lib/db";
 import { daysToPayment, handleInvoiceEvent, setWebhookInvoiceFetchForTesting } from "../lib/webhooks/invoice-events";
 import { closeProposalsForInvoice } from "../lib/queue/close";
 import { authorizeCron } from "../lib/cron";
+import { PUBLIC_PATHS } from "../lib/auth";
 import { CUSTOMERS, demoNumber, demoStamp, isDemoNumber, issueDate, latestSuffixToday, nextSuffix, parseEmails, paymentDate } from "../lib/demo/reset";
 import { isolate, reset } from "./helpers";
 
@@ -77,6 +78,25 @@ test("UPDATED events are recorded only; closeProposalsForInvoice dry run changes
 
 test("daysToPayment uses the last payment date; null when unpaid", () => {
   assert.equal(daysToPayment({ ...paidInvoice, payments: undefined }), null);
+});
+
+test("webhook alias: /api/webhooks/invoices runs the very same handler as /api/webhooks/paypal and is public like it", async () => {
+  const [alias, original] = await Promise.all([import("../app/api/webhooks/invoices/route"), import("../app/api/webhooks/paypal/route")]);
+  assert.equal(alias.POST, original.POST);
+  assert.ok(PUBLIC_PATHS.has("/api/webhooks/invoices") && PUBLIC_PATHS.has("/api/webhooks/paypal"));
+  // Unsigned deliveries are refused before anything is verified or handled, on both URLs.
+  const saved = process.env.PAYPAL_WEBHOOK_ID;
+  try {
+    const post = (path: string) => alias.POST(new Request(`https://x${path}`, { method: "POST", body: JSON.stringify({ id: "WH-1", event_type: "INVOICING.INVOICE.PAID" }) }));
+    delete process.env.PAYPAL_WEBHOOK_ID;
+    assert.equal((await post("/api/webhooks/invoices")).status, 500);
+    process.env.PAYPAL_WEBHOOK_ID = "WH-TEST";
+    const res = await post("/api/webhooks/invoices");
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { error: "MISSING_SIGNATURE_HEADERS" });
+  } finally {
+    if (saved === undefined) delete process.env.PAYPAL_WEBHOOK_ID; else process.env.PAYPAL_WEBHOOK_ID = saved;
+  }
 });
 
 test("cron auth: refuses without a long secret, rejects a wrong bearer, accepts the right one", () => {
