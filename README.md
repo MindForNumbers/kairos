@@ -313,7 +313,7 @@ New PayPal API code in Kairos is built with APIMatic's Context Plugin (`paypal@c
 
 - **Look:** light-first, with the Kairos blue palette: **ink** `#1E2A78` (headings, active nav, the brand mark), **blue** `#4353E0` (primary actions and accents) and **sky** `#A5B4FC` (soft fills, chart secondaries), on white surfaces over a `#F1F2F6` page. Pill buttons, an underlined nav and 16px cards. Dark mode follows the system. The palette is deliberately not PayPal's brand colors, and the only PayPal mention in the UI is the plain "Connected to PayPal (sandbox)" label.
 - **The Director:** inspired by adaptive director systems in video games: something watching the state of play and choosing the pacing, rather than a fixed script. Here, code reads payment history and recent signals and decides who to nudge, how firmly and on which day, while hard rules and the owner keep the final say.
-- **Credit:** the idea of an adaptive director comes from the AI Director in *Left 4 Dead* (Valve).
+- **Credit:** the idea of an adaptive director comes from video games.
 - **Division of labor:** AI proposes, code enforces, you approve. Models only write and review text; every number, eligibility decision and send gate is code.
 
 ## Built vs. next
